@@ -202,8 +202,8 @@ draw_rect_col:
     subi $t5, $t5, 1            # width--
     addi $t6, $t6, 1            # increment column counter
     
-    # Check if we've drawn 3 pixels (swap every 3rd pixel)
-    li $t7, 3
+    # Check if we've drawn BLOCK_SIZE pixels (swap every BLOCK_SIZE pixel)
+    lw $t7, BLOCK_SIZE
     div $t6, $t7
     mfhi $t8                    # remainder of t6 / 3
     bnez $t8, draw_rect_col     # if remainder != 0, don't swap
@@ -222,8 +222,8 @@ draw_rect_next_row:
     # Get current row number for swapping logic
     sub $t9, $s3, $s1           # current row = original_height - remaining_height
     
-    # Check if we've drawn 3 rows (swap every 3rd row)
-    li $t7, 3
+    # Check if we've drawn BLOCK_SIZE rows (swap every BLOCK_SIZE row)
+    lw $t7, BLOCK_SIZE
     div $t9, $t7
     mfhi $t8                    # remainder of current_row / 3
     bnez $t8, draw_rect_row     # if remainder != 0, don't swap
