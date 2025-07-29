@@ -63,13 +63,20 @@ DISPLAY_HEIGHT:
 
 WALL_WIDTH:
     .word 17
+
+GRID_WIDTH:
+    .word 0             # Calculated at run time
     
 FLOOR_HEIGHT:
     .word 4
+    
+GRID_HEIGHT:
+    .word 0             # Calculated at run time
 
 BLOCK_SIZE:
     .word 3
 
+# Colours
 wallColour:
     .word 0x30434d
 
@@ -78,6 +85,13 @@ primaryGridColour:
 
 secondaryGridColour:
     .word 0x323233
+
+primaryZColour:
+    .word 0xff7e70
+
+secondaryZColour:
+    .word 0xffc107
+
 
 ##############################################################################
 # Code
@@ -88,6 +102,48 @@ secondaryGridColour:
 	# Run the Tetris game.
 main:
     # Initialize the game
+    
+    jal calculate_grid
+    jal draw_frame
+    
+    # Draw one block
+    lw $a0, ADDR_DSPL
+    li $a1, 17
+    li $a2, 0
+    
+    
+    lw $t0, primaryZColour
+    lw $t1 secondaryZColour
+    
+    subi $sp, $sp, 8
+    sw $t0, 0($sp)
+    sw $t1, 4($sp)
+    
+    jal draw_block
+    addi $sp, $sp, 8
+    
+    
+    j end
+    
+calculate_grid:
+    # Load grid width
+    lw $t0, DISPLAY_WIDTH
+    lw $t1, WALL_WIDTH
+    sub $t0, $t0, $t1
+    sub $t0, $t0, $t1           # width = DISPLAY_SIZE - 2*WALL_WIDTH
+    sw $t0, GRID_WIDTH
+    
+    # Load grid height
+    lw $t0, DISPLAY_HEIGHT
+    lw $t1, FLOOR_HEIGHT
+    sub $t0, $t0, $t1            # height = DISPLAY_HEIGHT - FLOOR_HEIGHT
+    sw $t0, GRID_HEIGHT
+    
+    jr $ra
+
+draw_frame:
+    subi $sp, $sp, 4
+    sw $ra, 0($sp)              # Store main location in memory
     
     # Draw Left Wall
     lw $a0, ADDR_DSPL
@@ -121,11 +177,10 @@ main:
     
     # Draw Bottom Wall
     lw $a0, ADDR_DSPL
-    li $a1, 0                    # x_offset = 0
-    lw $t0, DISPLAY_HEIGHT
+    lw $a1, WALL_WIDTH           # x_offset = WALL_WIDTH
+    lw $a2, GRID_HEIGHT          # y_offset = GRID_HEIGHT
+    lw $a3, GRID_WIDTH           # width = GRID_WIDTH
     lw $t1, FLOOR_HEIGHT
-    sub $a2, $t0, $t1            # y_offset = DISPLAY_HEIGHT - FLOOR_HEIGHT
-    lw $a3, DISPLAY_WIDTH        # width = DISPLAY_WIDTH
     subi $sp, $sp, 12
     lw $t0, wallColour           # Push wall colour onto stack(this will be both primary and secondarry colours)
     sw $t0, 8($sp)
@@ -138,22 +193,21 @@ main:
     lw $a0, ADDR_DSPL
     lw $a1, WALL_WIDTH          # x_offset = WALL_WIDTH
     li $a2, 0                   # y_offset = 0
-    lw $a3, DISPLAY_WIDTH
-    sub $a3, $a3, $a1
-    sub $a3, $a3, $a1           # width = DISPLAY_SIZE - 2*WALL_WIDTH
+    lw $a3, GRID_WIDTH
     subi $sp, $sp, 12
     lw $t0, primaryGridColour   # Push grid p colour onto stack
     lw $t1, secondaryGridColour   # Push grid p colour onto stack
     sw $t0, 8($sp)
     sw $t1, 4($sp)
-    lw $t0, DISPLAY_HEIGHT
-    lw $t1, FLOOR_HEIGHT
-    sub $t0, $t0, $t1            # height = DISPLAY_HEIGHT - FLOOR_HEIGHT
+    lw $t0, GRID_HEIGHT
     sw $t0, 0($sp)               # Push height onto stack
     jal draw_rectangle
     addi $sp, $sp, 12             # Clean up stack
     
-    j end
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
 
 # Parameters: $a0 = base_addr, $a1 = x_offset, $a2 = y_offset, $a3 = width
 # Stack parameter: height, primary colour, secondary colour
@@ -202,10 +256,10 @@ draw_rect_col:
     subi $t5, $t5, 1            # width--
     addi $t6, $t6, 1            # increment column counter
     
-    # Check if we've drawn BLOCK_SIZE pixels (swap every BLOCK_SIZE pixel)
+    # Check if drawn BLOCK_SIZE pixels (swap every BLOCK_SIZE pixel)
     lw $t7, BLOCK_SIZE
     div $t6, $t7
-    mfhi $t8                    # remainder of t6 / 3
+    mfhi $t8                    # remainder of t6 / BLOCK_SIZE
     bnez $t8, draw_rect_col     # if remainder != 0, don't swap
     
     # Swap primary and secondary colours every 3rd pixel
@@ -245,7 +299,92 @@ draw_rect_done:
     lw $ra, 24($sp)
     addi $sp, $sp, 28
     jr $ra
-        
+
+# Parameters: $a0 = base_addr, $a1 = x_offset, $a2 = y_offset
+# Stack: Primary Colour, Secondary Colour
+draw_block:
+    subi $sp, $sp, 32 
+    sw $s0, 0($sp)              # Primary color
+    sw $s1, 4($sp)              # Secondary color
+    sw $s2, 8($sp)              # Row increment (DISPLAY_WIDTH * 4)
+    sw $s3, 12($sp)             # Current row address
+    sw $s4, 16($sp)             # BLOCK_SIZE
+    sw $s5, 20($sp)             # BLOCK_SIZE - 1 (border check)
+    sw $s6, 24($sp)             # Row counter
+    sw $ra, 28($sp)
+    
+    lw $s0, 32($sp)             # Primary Colour
+    lw $s1, 36($sp)             # Secondary Colour
+    
+    # Calculate starting address
+    move $s3, $a0               
+    sll $t0, $a1, 2             # x_offset *= 4
+    add $s3, $s3, $t0           # base_addr + x_offset
+    
+    lw $t0, DISPLAY_WIDTH
+    sll $s2, $t0, 2             # Row increment = DISPLAY_WIDTH * 4
+    mult $a2, $s2               # y_offset * row_increment
+    mflo $t0
+    add $s3, $s3, $t0           # Final starting address in $s3
+    
+    lw $s4, BLOCK_SIZE          # BLOCK_SIZE in $s4
+    subi $s5, $s4, 1            # BLOCK_SIZE - 1 in $s5 (for border check)
+    move $s6, $s4               # Row counter in $s6
+
+draw_block_row:
+    beqz $s6, draw_block_row_finished
+    
+    move $t0, $s4               # BLOCK_SIZE = column counter
+    move $t1, $s3               # Current pixel address
+    
+    sub $t2, $s4, $s6           # i = BLOCK_SIZE - row_counter
+    
+    jal draw_block_col
+   
+    subi $s6, $s6, 1            # Decrement row counter
+    add $s3, $s3, $s2           # Move to next row address
+    j draw_block_row
+
+draw_block_col:
+    beqz $t0, draw_block_col_finished
+    
+    sub $t3, $s4, $t0           # j = BLOCK_SIZE - column_counter
+    
+    # if i==0 || j==0 || i==last || j==last
+    beqz $t2, use_primary       # i == 0 (top border)
+    beqz $t3, use_primary       # j == 0 (left border)  
+    beq $t2, $s5, use_primary   # i == BLOCK_SIZE-1 (bottom border)
+    beq $t3, $s5, use_primary   # j == BLOCK_SIZE-1 (right border)
+    
+    # Interior pixel - use secondary color
+    move $t4, $s1
+    j store_pixel
+
+use_primary:
+    move $t4, $s0
+
+store_pixel:
+    sw $t4, 0($t1)              # Store the color
+    addi $t1, $t1, 4            # Move to next pixel
+    subi $t0, $t0, 1            # Decrement column counter
+    j draw_block_col
+
+draw_block_col_finished:
+    jr $ra
+
+draw_block_row_finished:
+    lw $s0, 0($sp)
+    lw $s1, 4($sp)
+    lw $s2, 8($sp)
+    lw $s3, 12($sp)
+    lw $s4, 16($sp)
+    lw $s5, 20($sp)
+    lw $s6, 24($sp)
+    lw $ra, 28($sp)
+    addi $sp, $sp, 32
+    jr $ra
+    
+    
 game_loop:
 	# 1a. Check if key has been pressed
     # 1b. Check which key has been pressed
