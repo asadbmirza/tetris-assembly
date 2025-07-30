@@ -28,7 +28,7 @@
 # - (insert YouTube / MyMedia / other URL here). Make sure we can view it!
 #
 # Are you OK with us sharing the video with people outside course staff?
-# - yes / no
+# - yes
 #
 # Any additional information that the TA needs to know:
 # - (write here, if any)
@@ -75,6 +75,9 @@ GRID_HEIGHT:
 
 BLOCK_SIZE:
     .word 3
+    
+DISPLAY_INCREMENT:
+    .word 256           # Calculated at run time(should be 4*display_width)
 
 # Colours
 wallColour:
@@ -85,13 +88,108 @@ primaryGridColour:
 
 secondaryGridColour:
     .word 0x323233
+    
 
-primaryZColour:
-    .word 0xff7e70
+## Blocks (Stored in a 4 x 4 grid)
 
-secondaryZColour:
-    .word 0xffc107
+# S-piece
+s_pieces:
+    # Colours
+    .word 0xff7e70      # Primary Colour (orange-red)
+    .word 0xffc107      # Secondary Colour (yellow)
+    # Rotation 0
+    .word 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 1
+    .word 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0
+    # Rotation 2
+    .word 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0
+    # Rotation 3
+    .word 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
 
+# Z-piece
+z_pieces:
+    # Colours
+    .word 0xff0000      # Primary Colour (red)
+    .word 0xff6b6b      # Secondary Colour (light red)
+    # Rotation 0
+    .word 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 1
+    .word 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0
+    # Rotation 2
+    .word 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0
+    # Rotation 3
+    .word 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0
+
+# I-piece (line)
+i_pieces:
+    # Colours
+    .word 0x00ffff      # Primary Colour (cyan)
+    .word 0x4dd0e1      # Secondary Colour (light cyan)
+    # Rotation 0 (horizontal)
+    .word 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 1 (vertical)
+    .word 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0
+    # Rotation 2 (horizontal)
+    .word 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0
+    # Rotation 3 (vertical)
+    .word 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0
+
+# O-piece (square)
+o_pieces:
+    # Colours
+    .word 0xffff00      # Primary Colour (yellow)
+    .word 0xfff176      # Secondary Colour (light yellow)
+    # Rotation 0
+    .word 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 1
+    .word 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 2
+    .word 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 3
+    .word 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+# T-piece
+t_pieces:
+    # Colours
+    .word 0x800080      # Primary Colour (purple)
+    .word 0xba68c8      # Secondary Colour (light purple)
+    # Rotation 0
+    .word 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 1
+    .word 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0
+    # Rotation 2
+    .word 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0
+    # Rotation 3
+    .word 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
+
+# L-piece
+l_pieces:
+    # Colours
+    .word 0xffa500      # Primary Colour (orange)
+    .word 0xffcc80      # Secondary Colour (light orange)
+    # Rotation 0
+    .word 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 1
+    .word 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0
+    # Rotation 2
+    .word 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 3
+    .word 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
+
+# J-piece
+j_pieces:
+    # Colours
+    .word 0x0000ff      # Primary Colour (blue)
+    .word 0x64b5f6      # Secondary Colour (light blue)
+    # Rotation 0
+    .word 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    # Rotation 1
+    .word 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
+    # Rotation 2
+    .word 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0
+    # Rotation 3
+    .word 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0
+    
 
 ##############################################################################
 # Code
@@ -107,20 +205,36 @@ main:
     jal draw_frame
     
     # Draw one block
-    lw $a0, ADDR_DSPL
+    li $a0, 3
     li $a1, 17
     li $a2, 0
+    la $a3, t_pieces
     
+    jal draw_tetromino
     
-    lw $t0, primaryZColour
-    lw $t1 secondaryZColour
+    # Draw one block
+    li $a0, 0
+    li $a1, 17
+    li $a2, 12
+    la $a3, l_pieces
     
-    subi $sp, $sp, 8
-    sw $t0, 0($sp)
-    sw $t1, 4($sp)
+    jal draw_tetromino
     
-    jal draw_block
-    addi $sp, $sp, 8
+    # Draw one block
+    li $a0, 0
+    li $a1, 26
+    li $a2, 12
+    la $a3, j_pieces
+    
+    jal draw_tetromino
+    
+    # Draw one block
+    li $a0, 0
+    li $a1, 23
+    li $a2, 0
+    la $a3, z_pieces
+    
+    jal draw_tetromino
     
     
     j end
@@ -138,6 +252,13 @@ calculate_grid:
     lw $t1, FLOOR_HEIGHT
     sub $t0, $t0, $t1            # height = DISPLAY_HEIGHT - FLOOR_HEIGHT
     sw $t0, GRID_HEIGHT
+    
+    # Calculate Display Increment
+    lw $t0, DISPLAY_WIDTH
+    li $t1, 4
+    mult $t0, $t1
+    mflo $t0                    # Compute DISPLAY_WIDTH*4
+    sw $t0, DISPLAY_INCREMENT
     
     jr $ra
 
@@ -321,8 +442,7 @@ draw_block:
     sll $t0, $a1, 2             # x_offset *= 4
     add $s3, $s3, $t0           # base_addr + x_offset
     
-    lw $t0, DISPLAY_WIDTH
-    sll $s2, $t0, 2             # Row increment = DISPLAY_WIDTH * 4
+    lw $s2, DISPLAY_INCREMENT
     mult $a2, $s2               # y_offset * row_increment
     mflo $t0
     add $s3, $s3, $t0           # Final starting address in $s3
@@ -383,7 +503,80 @@ draw_block_row_finished:
     lw $ra, 28($sp)
     addi $sp, $sp, 32
     jr $ra
+
+
+# Parameters: $a0 = tetromino_offset(0, 1, 2, 3), $a1 = x_offset, $a2 = y_offset, $a3 = tetromino_piece
+draw_tetromino:
+    subi $sp, $sp, 20
+    sw $s0, 0($sp)              # Row counter
+    sw $s1, 4($sp)              # x_offset
+    sw $s2, 8($sp)              # Col counter
+    sw $s3, 12($sp)             # BLOCK_SIZE
+    sw $ra, 16($sp)
     
+    li $s0, 4                   # Tetromino's are 4 x 4 at max
+    move $s1, $a1
+    
+    # Store colours on the stack
+    lw $t0, 0($a3)               # Primary Colour
+    lw $t1, 4($a3)              # Secondary Colour
+    addi $a3, $a3, 8            # Move past the colours
+    
+    # Calculate the offset
+    sll $a0, $a0, 6             # offset*64
+    add $a3, $a3, $a0           # Add the offset
+    
+    subi $sp, $sp, 12
+    sw $t0, 0($sp)              # Primary Colour
+    sw $t1, 4($sp)              # Secondary Colour
+    # the rows's ra will be stored in the 8th index
+    
+    lw $s3, BLOCK_SIZE
+    lw $a0, ADDR_DSPL           # base_addr
+
+draw_tetromino_row:
+    beqz $s0, draw_tetromino_row_finished
+    
+    li $s2, 4                   # Tetromino's are 4 x 4 at max
+    move $a1, $s1
+    jal store_row_link          # Store link, then branch to draw_tetromino_col
+    
+    
+    add $a2, $a2, $s3            # increase y_offset by 1 BLOCK_SIZE
+    subi $s0, $s0, 1            
+    j draw_tetromino_row
+    
+store_row_link:
+    sw $ra, 8($sp)              # store draw_tetromino_row's link
+    j draw_tetromino_col
+
+draw_tetromino_col:
+    beqz $s2, draw_tetromino_col_finished
+    
+    lw $t1, 0($a3)              # get value of current tetromino piece
+    beqz $t1, draw_tetromino_col_increment    # If position of tetromino is 0, skip
+    jal draw_block
+    
+    
+draw_tetromino_col_increment:
+    add $a1, $a1, $s3            # increase x_offset by 1 BLOCK_SIZE
+    subi $s2, $s2, 1            
+    addi $a3, $a3, 4            # move to next tetromino byte position
+    j draw_tetromino_col
+
+draw_tetromino_col_finished:
+    lw $ra, 8($sp)
+    jr $ra
+
+draw_tetromino_row_finished:
+    addi $sp, $sp, 12            # For getting rid of the colours and rows RA
+    lw $s0, 0($sp)              
+    lw $s1, 4($sp) 
+    lw $s2, 8($sp)
+    lw $s3, 12($sp)
+    lw $ra, 16($sp)
+    addi $sp, $sp, 16
+    jr $ra
     
 game_loop:
 	# 1a. Check if key has been pressed
