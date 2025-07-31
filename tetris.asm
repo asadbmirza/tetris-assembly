@@ -10,7 +10,7 @@
 #
 # Which milestones have been reached in this submission?
 # (See the assignment handout for descriptions of the milestones)
-# - Milestone 1/2/3/4/5 (choose the one the applies)
+# - Milestone 1/2/3/ (choose the one the applies)
 #
 # Which approved features have been implemented?
 # (See the assignment handout for the list of features)
@@ -80,7 +80,7 @@ DISPLAY_INCREMENT:
     .word 256           # Calculated at run time(should be 4*display_width)
 
 GRID_SPACE:
-    .word 800           # 10 * 20 gameboard, each space is 4 bytes
+    .space 800           # 10 * 20 gameboard, each space is 4 bytes
 
 # Colours
 wallColour:
@@ -93,13 +93,13 @@ secondaryGridColour:
     .word 0x323233
     
 current_tetromino_state:
-    .word 4   # piece
+    .word 3   # piece
     .word 0   # rotation
     .word 26   # x_offset  
     .word 0   # y_offset
 
 potential_tetromino_state:
-    .word 4   # piece
+    .word 3   # piece
     .word 0   # rotation
     .word 26   # x_offset  
     .word 0   # y_offset
@@ -227,6 +227,11 @@ main:
     la $s0, current_tetromino_state
     la $s1, potential_tetromino_state
     
+    jal generate_new_piece         # generate random piece                  
+    
+    j setup_game_loop
+    
+setup_game_loop:
     lw $a0, 0($s0)                 # current piece
 	lw $a1, 4($s0)                 # x_offset
 	lw $a2, 8($s0)                 # y_offset
@@ -261,7 +266,7 @@ calculate_grid:
     jr $ra
 
 # Helper function to get piece data
-# Parameters: $a0 = piece_type (0=S, 1=Z, 2=I, 3=O, 4=T, 5=L, 6=J), $a1 = rotation (0-3)
+# Parameters: $a0 = piece_type (1=S, 2=Z, 3=I, 4=O, 5=T, 6=L, 7=J), $a1 = rotation (0-3)
 # Returns: $v0 = piece data address, $v1 = primary color
 # Note: Secondary color must be loaded separately using get_secondary_color
 get_piece_data:
@@ -269,13 +274,13 @@ get_piece_data:
     sw $ra, 0($sp)
     
     # Jump table for piece types
-    beq $a0, 0, load_s_piece
-    beq $a0, 1, load_z_piece
-    beq $a0, 2, load_i_piece
-    beq $a0, 3, load_o_piece
-    beq $a0, 4, load_t_piece
-    beq $a0, 5, load_l_piece
-    beq $a0, 6, load_j_piece
+    beq $a0, 1, load_s_piece
+    beq $a0, 2, load_z_piece
+    beq $a0, 3, load_i_piece
+    beq $a0, 4, load_o_piece
+    beq $a0, 5, load_t_piece
+    beq $a0, 6, load_l_piece
+    beq $a0, 7, load_j_piece
     j get_piece_done
     
 load_s_piece:
@@ -316,16 +321,16 @@ get_piece_done:
     addi $sp, $sp, 4
     jr $ra
 
-# Parameters: $a0 = piece_type (0=S, 1=Z, 2=I, 3=O, 4=T, 5=L, 6=J)
+# Parameters: $a0 = piece_type (1=S, 2=Z, 3=I, 4=O, 5=T, 6=L, 7=J)
 # Returns: $v0 = secondary color
 get_secondary_color:
-    beq $a0, 0, get_s_secondary
-    beq $a0, 1, get_z_secondary
-    beq $a0, 2, get_i_secondary
-    beq $a0, 3, get_o_secondary
-    beq $a0, 4, get_t_secondary
-    beq $a0, 5, get_l_secondary
-    beq $a0, 6, get_j_secondary
+    beq $a0, 1, get_s_secondary
+    beq $a0, 2, get_z_secondary
+    beq $a0, 3, get_i_secondary
+    beq $a0, 4, get_o_secondary
+    beq $a0, 5, get_t_secondary
+    beq $a0, 6, get_l_secondary
+    beq $a0, 7, get_j_secondary
     jr $ra
     
 get_s_secondary:
@@ -408,23 +413,111 @@ draw_frame:
     addi $sp, $sp, 12             # Clean up stack
     
     # Draw Grid Pattern
+    jal draw_grid
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+draw_grid:
+    subi $sp, $sp, 4
+    sw $ra, 0($sp)              # Store return address
+    
+    # Draw Grid Pattern
     lw $a0, ADDR_DSPL
     lw $a1, WALL_WIDTH          # x_offset = WALL_WIDTH
     li $a2, 0                   # y_offset = 0
     lw $a3, GRID_WIDTH
     subi $sp, $sp, 12
-    lw $t0, primaryGridColour   # Push grid p colour onto stack
-    lw $t1, secondaryGridColour   # Push grid p colour onto stack
+    lw $t0, primaryGridColour   # Push grid primary colour onto stack
+    lw $t1, secondaryGridColour # Push grid secondary colour onto stack
     sw $t0, 8($sp)
     sw $t1, 4($sp)
     lw $t0, GRID_HEIGHT
-    sw $t0, 0($sp)               # Push height onto stack
+    sw $t0, 0($sp)              # Push height onto stack
     jal draw_rectangle
-    addi $sp, $sp, 12             # Clean up stack
-    
+    jal fill_grid
+    addi $sp, $sp, 12           # Clean up stack
     
     lw $ra, 0($sp)
     addi $sp, $sp, 4
+    jr $ra
+
+fill_grid:
+    subi $sp, $sp, 28           
+    sw $s0, 0($sp)              # current grid position
+    sw $s1, 4($sp)              # i (row)
+    sw $s2, 8($sp)              # j (column)
+    sw $s3, 12($sp)             # current grid value/primary colour later
+    sw $s4, 16($sp)             # secondary colour
+    sw $s5, 20($sp)             # WALL_WIDTH value
+    sw $ra, 24($sp)
+    
+    li $s1, 0                   # i (row counter)
+    lw $s5, WALL_WIDTH          # used for calculating the x_offset
+    la $s0, GRID_SPACE
+    
+fill_row:
+    beq $s1, 20, fill_row_finished    # 20 rows in the grid
+    
+    li $s2, 0                   # j (column counter)
+    j fill_col
+    
+fill_row_increment:
+    addi $s1, $s1, 1            # increment row by 1
+    j fill_row
+    
+fill_col:
+    beq $s2, 10, fill_col_finished    # 10 columns in the grid
+    
+    lw $s3, 0($s0)              # current grid value
+    beqz $s3, fill_col_increment
+    
+    ## Otherwise will contain the tetris piece value (1 - 7)
+    
+    move $a0, $s3
+    li $a1, 0                   # rotation doesn't matter we just want the colour
+    jal get_piece_data
+    move $s3, $v1               # primary colour (reuse $s3)
+    jal get_secondary_color
+    move $s4, $v0               # secondary colour
+    subi $sp, $sp, 8
+    sw $s3, 0($sp)
+    sw $s4, 4($sp)              # load colours on the stack
+    
+    lw $a0, ADDR_DSPL
+    
+    # Convert grid coordinates to screen coordinates
+    li $t0, 3                   # BLOCK_SIZE
+    mult $s2, $t0               # j * BLOCK_SIZE
+    mflo $t1
+    add $a1, $t1, $s5           # x_offset = WALL_WIDTH + (j * BLOCK_SIZE)
+    
+    mult $s1, $t0               # i * BLOCK_SIZE  
+    mflo $a2                    # y_offset = i * BLOCK_SIZE
+    
+    jal draw_block              # draw the block in the correct position
+    addi $sp, $sp, 8
+    
+    
+fill_col_increment:
+    addi $s2, $s2, 1            # increment column by 1
+    addi $s0, $s0, 4            # next grid position (4 bytes per grid cell)
+    j fill_col
+    
+fill_col_finished:
+    j fill_row_increment
+    
+fill_row_finished:
+    lw $s0, 0($sp)          
+    lw $s1, 4($sp)
+    lw $s2, 8($sp)
+    lw $s3, 12($sp)
+    lw $s4, 16($sp)
+    lw $s5, 20($sp)
+    lw $ra, 24($sp)
+    addi $sp, $sp, 28
+    
     jr $ra
 
 
@@ -743,7 +836,7 @@ end_input:
     
 ## Collisions ##
 # Parameters: $a0 = potential tetromino state
-# Returns 0 in $v0 if there is a collision, 1 if there is not 
+# Returns 0 in $v0 if there is a side collision, 1 if there is not, 2 if there is a downwards collision
 
 check_collision:
     subi $sp, $sp, 24          
@@ -768,8 +861,8 @@ check_collision:
     jal check_wall_collision
     beqz $v0, check_collision_end
     
-    # jal check_floor_collision
-    # beqz $v0, check_collision_end
+    jal check_floor_collision
+    beq $v0, 2, check_collision_end
     
     # jal check_grid_collision
     
@@ -843,10 +936,61 @@ branch_and_return:
     jr $ra
 
 check_floor_collision:
+    subi $sp, $sp, 4          
+    sw   $ra, 0($sp)
+    
+    lw $t6, GRID_HEIGHT
+    
+    # Get BOTTOMMOST block
+    li   $a0, 3              # starting from row 3 (bottom)
+    move $a1, $s3            # pointer to piece
+    addi $a1, $a1, 48        # needs to be at row 3 (48 = 3 * 16)
+    li   $a2, -1             # direction: bottom to top
+    jal  get_vertical_extreme_block
+    move $t8, $v0            # store bottommost row in $t8
+    mult $t8, $s4            # multiply bottommost row by BLOCK_SIZE
+    mflo $t8
+    
+    lw   $ra, 0($sp)
+    addi $sp, $sp, 4         # add ra back  
+    
+    li $t0, 2                # default return value (collision found)
+    
+    # Check floor collision
+    add $t1, $s2, $t8        # add bottommost row to y offset
+    bge $t1, $t6, branch_and_return  # if floor is being clipped by updated y offset, return collision
+    
+    li $t0, 1                # No collision occurred
+    j branch_and_return
+
+# Arguments: $a0 — starting row index, $a1 — pointer to start of row, $a2 — direction (+1 = top to bottom, -1 = bottom to top)
+get_vertical_extreme_block:
+    move $t0, $a0      # row index
+    move $t1, $a1      # row base ptr
+    move $t4, $a2      # direction: +1 or -1
+loop_check_row:
+    lw $t2, 0($t1)     # check all 4 columns in this row
+    lw $t3, 4($t1)
+    add $t2, $t2, $t3
+    lw $t3, 8($t1)
+    add $t2, $t2, $t3
+    lw $t3, 12($t1)
+    add $t2, $t2, $t3
+    bgtz $t2, branch_and_return
+    add $t0, $t0, $t4            # row index += direction
+    mul $t5, $t4, 16             # offset = direction × 16
+    add $t1, $t1, $t5            # move to next row
+    j loop_check_row
 
 
 check_grid_collision:
-
+    subi $sp, $sp, 4          
+    sw   $ra, 0($sp)
+    
+    
+    li $t0, 1                # No collision occurred
+    j branch_and_return
+    
 break_loop:
     jr $ra
 
@@ -872,7 +1016,7 @@ reset:
 	syscall
 	j game_loop
 
-# Parameters: $a0 = state 1, $a1 = state 2
+# Parameters: $a0 = old state, $a1 = new state
 update_tetromino_state:
     lw $t0, 0($a1)
     lw $t1, 4($a1)
@@ -885,6 +1029,115 @@ update_tetromino_state:
     sw $t3, 12($a0)
     
     jr $ra
+    
+store_piece:
+    # Save registers on stack
+    subi $sp, $sp, 28
+    sw $s0, 0($sp)              
+    sw $s1, 4($sp)              
+    sw $s2, 8($sp)          
+    sw $s3, 12($sp)             
+    sw $s4, 16($sp)
+    sw $s5, 20($sp)
+    sw $ra, 24($sp)
+    
+    la $t0, current_tetromino_state
+    lw $s0, 8($t0)              # x_offset (constant)
+    lw $s1, 12($t0)             # y_offset (constant)
+    lw $s3, 0($t0)              # piece number (constant)
+     
+    move $a0, $s3
+    lw $a1, 4($t0)              # rotation
+    jal get_piece_data
+    move $s2, $v0               # piece address (constant)
+    
+    lw $t0, WALL_WIDTH
+    sub $s0, $s0, $t0           # subtract wall width from x_offset
+    li $t0, 3
+    div $s0, $t0                # divide by three as each block is 3 x 3
+    mflo $s0
+    mul $s0, $s0, 4             # byte orient it
+    
+    la $s4, GRID_SPACE          # base_addr
+    li $s5, 40                  # constant for 1 grid row increment
+    mult $s1, $s5               # multiply y_offset by display increment
+    mflo $s5
+    div $s5, $t0                # divide by three as each block is 3x3
+    mflo $s5
+    li $t0, 0                   # row (i)
+    j store_piece_index
+
+store_piece_index:
+    beq $t0, 4, restore_and_exit  # check row counter against constant
+    li $t5, 0                   # col number
+    mul $t3, $t0, 40            # multiply row number by display increment
+    add $t6, $s5, $t3           # new y_offset 40(y_offset + row number)
+
+column_loop:
+    beq $t5, 4, next_row      # if we've checked all 4 columns, move to next row
+    
+    mul $t7, $t5, 4             # column offset = col * 4 bytes
+    add $t8, $s2, $t7           # address = piece_base + column_offset
+    lw $t9, 0($t8)              # load column value
+    
+    add $t7, $t7, $s0           # new x_offset
+    bne $t9, 1, column_loop_increment
+    
+    # Store value of piece
+    add $t2, $s4, $t7           # add new x_offset to base_addr
+    add $t2, $t2, $t6           # add new y_offset
+    
+    sw $s3, 0($t2)              # store piece valid in GRID_SPACE
+    
+    
+column_loop_increment:    
+    addi $t5, $t5, 1            # col++
+    j column_loop
+
+next_row:
+    addi $t0, $t0, 1            # row index += 1
+    addi $s2, $s2, 16           # move to next row in piece data
+    j store_piece_index
+
+restore_and_exit:
+    lw $s0, 0($sp)
+    lw $s1, 4($sp)
+    lw $s2, 8($sp)
+    lw $s3, 12($sp)
+    lw $s4, 16($sp)
+    lw $s5, 20($sp)
+    lw $ra, 24($sp)
+    addi $sp, $sp, 28
+    j generate_new_piece
+
+generate_new_piece:  
+    subi $sp, $sp, 4
+    sw $ra, 0($sp)      # store ra
+
+    la $t0, current_tetromino_state         # load current tetromino
+    
+    li $a0, 0           # generator ID = 0 (default)
+    li $a1, 7           # upper bound on tetromino
+    li $v0, 42          # system call for random int
+    syscall
+    addi $t1, $a0, 1    # add 1 to random number as it's from (0-6)
+    li $t2, 0           # new rotation
+    li $t3, 26          # x_offset
+    li $t4, 0           # y_offset
+    
+    sw $t1, 0($t0)
+    sw $t2, 4($t0)
+    sw $t3, 8($t0)
+    sw $t4, 12($t0)
+    
+     la $a0, potential_tetromino_state
+     la $a1, current_tetromino_state
+     jal update_tetromino_state         # copy current state to potential state
+     
+     lw $ra, 0($sp)
+     addi $sp, $sp, 4
+    
+     j setup_game_loop
 
 game_loop:
     
@@ -899,13 +1152,14 @@ game_loop:
     move $a0, $s1 
     jal check_collision
     beqz $v0, reset
+    beq $v0, 2, store_piece
     
 	# 2b. Update locations (paddle, ball)
 	move $a0, $s0
 	move $a1, $s1
 	jal update_tetromino_state
 	# 3. Draw the screen
-	jal draw_frame
+	jal draw_grid
 	lw $a0, 0($s0)                 # current piece
 	lw $a1, 4($s0)                 # rotation
 	lw $a2, 8($s0)                 # x_offset
