@@ -79,6 +79,9 @@ BLOCK_SIZE:
 DISPLAY_INCREMENT:
     .word 256           # Calculated at run time(should be 4*display_width)
 
+GRID_SPACE:
+    .word 800           # 10 * 20 gameboard, each space is 4 bytes
+
 # Colours
 wallColour:
     .word 0x30434d
@@ -89,6 +92,17 @@ primaryGridColour:
 secondaryGridColour:
     .word 0x323233
     
+current_tetromino_state:
+    .word 4   # piece
+    .word 0   # rotation
+    .word 26   # x_offset  
+    .word 0   # y_offset
+
+potential_tetromino_state:
+    .word 4   # piece
+    .word 0   # rotation
+    .word 26   # x_offset  
+    .word 0   # y_offset
 
 ## Blocks (Stored in a 4 x 4 grid)
 
@@ -204,41 +218,25 @@ main:
     jal calculate_grid
     jal draw_frame
     
-    # Draw one block
-    li $a0, 3
-    li $a1, 17
-    li $a2, 0
-    la $a3, t_pieces
+    ## Load current tetromino
+    subi $sp, $sp, 12
+    sw $s0, 0($sp)              # tetromino's state
+    sw $s1, 4($sp)              # tetromino's next potential state
+    sw $ra, 8($sp)
     
-    jal draw_tetromino
+    la $s0, current_tetromino_state
+    la $s1, potential_tetromino_state
     
-    # Draw one block
-    li $a0, 0
-    li $a1, 17
-    li $a2, 12
-    la $a3, l_pieces
+    lw $a0, 0($s0)                 # current piece
+	lw $a1, 4($s0)                 # x_offset
+	lw $a2, 8($s0)                 # y_offset
+	lw $a3, 12($s0)                # rotation
+	jal draw_tetromino             # draw initial tetromino
     
-    jal draw_tetromino
-    
-    # Draw one block
-    li $a0, 0
-    li $a1, 26
-    li $a2, 12
-    la $a3, j_pieces
-    
-    jal draw_tetromino
-    
-    # Draw one block
-    li $a0, 0
-    li $a1, 23
-    li $a2, 0
-    la $a3, z_pieces
-    
-    jal draw_tetromino
-    
-    
-    j end
-    
+    j game_loop
+
+## Helper Functions ##
+
 calculate_grid:
     # Load grid width
     lw $t0, DISPLAY_WIDTH
@@ -261,6 +259,105 @@ calculate_grid:
     sw $t0, DISPLAY_INCREMENT
     
     jr $ra
+
+# Helper function to get piece data
+# Parameters: $a0 = piece_type (0=S, 1=Z, 2=I, 3=O, 4=T, 5=L, 6=J), $a1 = rotation (0-3)
+# Returns: $v0 = piece data address, $v1 = primary color
+# Note: Secondary color must be loaded separately using get_secondary_color
+get_piece_data:
+    subi $sp, $sp, 4
+    sw $ra, 0($sp)
+    
+    # Jump table for piece types
+    beq $a0, 0, load_s_piece
+    beq $a0, 1, load_z_piece
+    beq $a0, 2, load_i_piece
+    beq $a0, 3, load_o_piece
+    beq $a0, 4, load_t_piece
+    beq $a0, 5, load_l_piece
+    beq $a0, 6, load_j_piece
+    j get_piece_done
+    
+load_s_piece:
+    la $t0, s_pieces
+    j load_piece_common
+load_z_piece:
+    la $t0, z_pieces
+    j load_piece_common
+load_i_piece:
+    la $t0, i_pieces
+    j load_piece_common
+load_o_piece:
+    la $t0, o_pieces
+    j load_piece_common
+load_t_piece:
+    la $t0, t_pieces
+    j load_piece_common
+load_l_piece:
+    la $t0, l_pieces
+    j load_piece_common
+load_j_piece:
+    la $t0, j_pieces
+    
+load_piece_common:
+    # Load colors
+    lw $v1, 0($t0)      # Primary color
+    # Note: Secondary color at 4($t0)
+    
+    # Calculate rotation offset: 8 + (rotation * 64)
+    li $t1, 64          # Each rotation = 16 words * 4 bytes
+    mult $a1, $t1
+    mflo $t1
+    addi $t0, $t0, 8    # Skip color words
+    add $v0, $t0, $t1   # Add rotation offset
+    
+get_piece_done:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+# Parameters: $a0 = piece_type (0=S, 1=Z, 2=I, 3=O, 4=T, 5=L, 6=J)
+# Returns: $v0 = secondary color
+get_secondary_color:
+    beq $a0, 0, get_s_secondary
+    beq $a0, 1, get_z_secondary
+    beq $a0, 2, get_i_secondary
+    beq $a0, 3, get_o_secondary
+    beq $a0, 4, get_t_secondary
+    beq $a0, 5, get_l_secondary
+    beq $a0, 6, get_j_secondary
+    jr $ra
+    
+get_s_secondary:
+    la $t0, s_pieces
+    lw $v0, 4($t0)
+    jr $ra
+get_z_secondary:
+    la $t0, z_pieces
+    lw $v0, 4($t0)
+    jr $ra
+get_i_secondary:
+    la $t0, i_pieces
+    lw $v0, 4($t0)
+    jr $ra
+get_o_secondary:
+    la $t0, o_pieces
+    lw $v0, 4($t0)
+    jr $ra
+get_t_secondary:
+    la $t0, t_pieces
+    lw $v0, 4($t0)
+    jr $ra
+get_l_secondary:
+    la $t0, l_pieces
+    lw $v0, 4($t0)
+    jr $ra
+get_j_secondary:
+    la $t0, j_pieces
+    lw $v0, 4($t0)
+    jr $ra
+
+## Drawing Functions ##
 
 draw_frame:
     subi $sp, $sp, 4
@@ -329,6 +426,7 @@ draw_frame:
     lw $ra, 0($sp)
     addi $sp, $sp, 4
     jr $ra
+
 
 # Parameters: $a0 = base_addr, $a1 = x_offset, $a2 = y_offset, $a3 = width
 # Stack parameter: height, primary colour, secondary colour
@@ -505,34 +603,35 @@ draw_block_row_finished:
     jr $ra
 
 
-# Parameters: $a0 = tetromino_offset(0, 1, 2, 3), $a1 = x_offset, $a2 = y_offset, $a3 = tetromino_piece
+# Parameters: $a0 = tetromino_piece(0,...,6), $a1 = tetromino_rotation(0, 1, 2, 3), $a2 = x_offset, $a3 = y_offset
 draw_tetromino:
     subi $sp, $sp, 20
     sw $s0, 0($sp)              # Row counter
     sw $s1, 4($sp)              # x_offset
     sw $s2, 8($sp)              # Col counter
     sw $s3, 12($sp)             # BLOCK_SIZE
-    sw $ra, 16($sp)
+    sw $s4, 16($sp)             # Tetromino address
+    sw $ra, 20($sp)
     
     li $s0, 4                   # Tetromino's are 4 x 4 at max
-    move $s1, $a1
+    move $s1, $a2               # Load x_offset into saved register
     
-    # Store colours on the stack
-    lw $t0, 0($a3)               # Primary Colour
-    lw $t1, 4($a3)              # Secondary Colour
-    addi $a3, $a3, 8            # Move past the colours
-    
-    # Calculate the offset
-    sll $a0, $a0, 6             # offset*64
-    add $a3, $a3, $a0           # Add the offset
+    # Get piece data such as colours and rotation
+    jal get_piece_data          # $v0 will have tetromino address, $v1 = primary colour
+    move $s4, $v0
+    jal get_secondary_color     # $v0 will have secondary colour
     
     subi $sp, $sp, 12
-    sw $t0, 0($sp)              # Primary Colour
-    sw $t1, 4($sp)              # Secondary Colour
+    sw $v1, 0($sp)              # Primary Colour
+    sw $v0, 4($sp)              # Secondary Colour
     # the rows's ra will be stored in the 8th index
     
     lw $s3, BLOCK_SIZE
+    
+    # Prep paramaters for drawing the block
     lw $a0, ADDR_DSPL           # base_addr
+    move $a1, $a2
+    move $a2, $a3
 
 draw_tetromino_row:
     beqz $s0, draw_tetromino_row_finished
@@ -553,7 +652,7 @@ store_row_link:
 draw_tetromino_col:
     beqz $s2, draw_tetromino_col_finished
     
-    lw $t1, 0($a3)              # get value of current tetromino piece
+    lw $t1, 0($s4)              # get value of current tetromino piece
     beqz $t1, draw_tetromino_col_increment    # If position of tetromino is 0, skip
     jal draw_block
     
@@ -561,7 +660,7 @@ draw_tetromino_col:
 draw_tetromino_col_increment:
     add $a1, $a1, $s3            # increase x_offset by 1 BLOCK_SIZE
     subi $s2, $s2, 1            
-    addi $a3, $a3, 4            # move to next tetromino byte position
+    addi $s4, $s4, 4            # move to next tetromino byte position
     j draw_tetromino_col
 
 draw_tetromino_col_finished:
@@ -574,20 +673,248 @@ draw_tetromino_row_finished:
     lw $s1, 4($sp) 
     lw $s2, 8($sp)
     lw $s3, 12($sp)
-    lw $ra, 16($sp)
-    addi $sp, $sp, 16
+    lw $s4, 16($sp)
+    lw $ra, 20($sp)
+    addi $sp, $sp, 20
+    jr $ra
+
+
+## CONTROLS ##
+# Returns 0 or 1 depending on if key is pressed
+check_input:
+    lw $t9, ADDR_KBRD               # $t9 = base address for keyboard
+    lw $v0, 0($t9)                  # Load first word from keyboard
+    jr $ra
+
+
+# Parameters: $a0 = potential_tetromino_state
+keyboard_input:
+    lw $t8, BLOCK_SIZE
+    lw $t0, 4($a0)                  # rotation
+    lw $t1, 8($a0)                  # x_offset
+    lw $t2, 12($a0)                  # y_offset
+    
+    lw $t9, ADDR_KBRD               # $t9 = base address for keyboardare 
+    lw $t3, 4($t9)                  # Key Pressed
+    beq $t3, 0x61, move_left        # Check if the key a was pressed
+    beq $t3, 0x41, move_left        # Check if the key A was pressed
+    beq $t3, 0x64, move_right       # Check if the key d was pressed
+    beq $t3, 0x44, move_right       # Check if the key D was pressed
+    beq $t3, 0x73, move_down        # Check if the key s was pressed
+    beq $t3, 0x53, move_down        # Check if the key S was pressed
+    beq $t3, 0x77, rotate_piece     # Check if the key w was pressed
+    beq $t3, 0x57, rotate_piece     # Check if the key W was pressed
+    beq $t3, 0x20, hard_drop_piece  # Check if the space bar was pressed
+    beq $t3, 0x71, quit_game        # Check if the key q was pressed
+    beq $t3, 0x51, quit_game        # Check if the key Q was pressed
+    j end_input
+    
+move_left: 
+    sub $t1, $t1, $t8               # shift left by BLOCK_SIZE
+    j end_input
+    
+move_right:
+    add $t1, $t1, $t8               # shift right by BLOCK_SIZE
+    j end_input
+
+move_down:
+    add $t2, $t2, $t8               # shift down by BLOCK_SIZE
+    j end_input
+
+rotate_piece:
+    addi $t0, $t0, 1
+    li $t3, 4                       # There are 4 rotations
+    div $t0, $t3
+    mfhi $t0                        # Store the remainder in $t0
+    
+    j end_input
+
+hard_drop_piece:
+
+quit_game:
+    li $v0, 10                      # Quit gracefully
+	syscall
+
+end_input:
+    sw $t0, 4($a0)                  # rotation
+    sw $t1, 8($a0)                  # x_offset
+    sw $t2, 12($a0)                 # y_offset 
     jr $ra
     
+## Collisions ##
+# Parameters: $a0 = potential tetromino state
+# Returns 0 in $v0 if there is a collision, 1 if there is not 
+
+check_collision:
+    subi $sp, $sp, 24          
+    sw   $s0, 0($sp)           # tetromino state
+    sw   $s1, 4($sp)           # x_offset
+    sw   $s2, 8($sp)           # y_offset
+    sw   $s3, 12($sp)          # piece ptr (after rotation)
+    sw   $s4, 16($sp)          # BLOCK_SIZE
+    sw   $ra, 20($sp)          
+    
+    # Load potential state
+    move $s0, $a0
+    lw $s1, 8($s0)              # x_offset        
+    lw $s2, 12($s0)              # y_offset
+    
+    lw $a0, 0($s0)             # piece type
+    lw $a1, 4($s0)              # rotation
+    jal get_piece_data
+    move $s3, $v0               # move piece pointer into s3
+    lw $s4, BLOCK_SIZE
+    
+    jal check_wall_collision
+    beqz $v0, check_collision_end
+    
+    # jal check_floor_collision
+    # beqz $v0, check_collision_end
+    
+    # jal check_grid_collision
+    
+    j check_collision_end
+
+check_wall_collision:
+    subi $sp, $sp, 4          
+    sw   $ra, 0($sp)
+    
+    lw $t6, DISPLAY_WIDTH
+    lw $t7, WALL_WIDTH
+    # Get LEFTMOST block
+    li   $a0, 0              # starting from column 0
+    move $a1, $s3            # pointer to piece
+    li   $a2, 1              # direction: left to right
+    jal  get_horizontal_extreme_block
+    move $t8, $v0            # store leftmost column in $t8
+    mult $t8, $s4            # multiply leftmost column by BLOCK_SIZE
+    mflo $t8
+
+    # Get RIGHTMOST block
+    li   $a0, 3              # starting from column 3
+    move $a1, $s3            # pointer to piece matrix
+    addi $a1, $a1, 12        # needs to be at column 3
+    li   $a2, -1             # direction: right to left
+    jal  get_horizontal_extreme_block
+    move $t9, $v0            # store rightmost column in $t9
+    mult $t9, $s4            # multiply rightmost column by BLOCK_SIZE
+    mflo $t9
+    
+    lw   $ra, 0($sp)
+    addi $sp, $sp, 4         # add ra back  
+    
+    li $t0, 0                # default return value(prepped for branch_and_return)
+    
+    # Check left collision
+    add $t1, $s1, $t8       # add leftmost column to x offset
+    blt $t1, $t7, branch_and_return         # if left wall is being clipped by updated x offset, return collision
+    
+    # Check right collision
+    sub $t7, $t6, $t7        # subtract right wall width from display width
+    add $t1, $s1, $t9        # add rightmost column to x offset 
+    bge $t1, $t7, branch_and_return         # if right wall is being clipped by updated x offset, return collision
+    
+    li $t0, 1                # No collisions occured
+    j branch_and_return
+
+# Arguments: $a0 — starting column index, $a1 — pointer to start of column, $a2 — direction (+1 = left to right, -1 = right to left)
+get_horizontal_extreme_block:
+    move $t0, $a0      # column index
+    move $t1, $a1      # column base ptr
+    move $t4, $a2      # direction: +1 or -1
+
+loop_check_column:
+    lw $t2, 0($t1)
+    lw $t3, 16($t1)
+    add $t2, $t2, $t3
+    lw $t3, 32($t1)
+    add $t2, $t2, $t3
+    lw $t3, 48($t1)
+    add $t2, $t2, $t3
+
+    bgtz $t2, branch_and_return
+    add $t0, $t0, $t4            # column index += direction
+    mul $t5, $t4, 4              # offset = direction × 4
+    add $t1, $t1, $t5            # move to next column
+    j loop_check_column
+
+branch_and_return:
+    move $v0, $t0
+    jr $ra
+
+check_floor_collision:
+
+
+check_grid_collision:
+
+break_loop:
+    jr $ra
+
+check_collision_end:
+    lw $s0, 0($sp)
+    lw $s1, 4($sp)
+    lw $s2, 8($sp)
+    lw $s3, 12($sp)
+    lw $s4, 16($sp)
+    lw $ra, 20($sp)
+    addi $sp, $sp, 24
+    jr $ra
+
+# Resets and updates
+reset:
+    # Reset potential state
+    move $a1, $s0
+	move $a0, $s1
+	jal update_tetromino_state
+    
+    li 		$v0, 32
+	li 		$a0, 16
+	syscall
+	j game_loop
+
+# Parameters: $a0 = state 1, $a1 = state 2
+update_tetromino_state:
+    lw $t0, 0($a1)
+    lw $t1, 4($a1)
+    lw $t2, 8($a1)
+    lw $t3, 12($a1)
+
+    sw $t0, 0($a0)
+    sw $t1, 4($a0)
+    sw $t2, 8($a0)
+    sw $t3, 12($a0)
+    
+    jr $ra
+
 game_loop:
+    
 	# 1a. Check if key has been pressed
+	jal check_input
+	beqz $v0, reset
     # 1b. Check which key has been pressed
+    move $a0, $s1
+    jal keyboard_input
     # 2a. Check for collisions
+    
+    move $a0, $s1 
+    jal check_collision
+    beqz $v0, reset
+    
 	# 2b. Update locations (paddle, ball)
+	move $a0, $s0
+	move $a1, $s1
+	jal update_tetromino_state
 	# 3. Draw the screen
+	jal draw_frame
+	lw $a0, 0($s0)                 # current piece
+	lw $a1, 4($s0)                 # rotation
+	lw $a2, 8($s0)                 # x_offset
+	lw $a3, 12($s0)                # y_offset
+	jal draw_tetromino
 	# 4. Sleep
+	jal reset
 
     #5. Go back to 1
-    j end
     b game_loop
 
 end:
