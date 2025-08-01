@@ -222,7 +222,8 @@ main:
     subi $sp, $sp, 12
     sw $s0, 0($sp)              # tetromino's state
     sw $s1, 4($sp)              # tetromino's next potential state
-    sw $ra, 8($sp)
+    sw $s2, 8($sp)              # keyboard_input
+    sw $ra, 12($sp)
     
     la $s0, current_tetromino_state
     la $s1, potential_tetromino_state
@@ -232,12 +233,12 @@ main:
     j setup_game_loop
     
 setup_game_loop:
+    jal draw_grid
     lw $a0, 0($s0)                 # current piece
 	lw $a1, 4($s0)                 # x_offset
 	lw $a2, 8($s0)                 # y_offset
 	lw $a3, 12($s0)                # rotation
 	jal draw_tetromino             # draw initial tetromino
-    
     j game_loop
 
 ## Helper Functions ##
@@ -803,29 +804,33 @@ keyboard_input:
     j end_input
     
 move_left: 
-    sub $t1, $t1, $t8               # shift left by BLOCK_SIZE
+    sub $t1, $t1, $t8
+    li $v0, 0                  # direction = left
     j end_input
     
 move_right:
-    add $t1, $t1, $t8               # shift right by BLOCK_SIZE
+    add $t1, $t1, $t8
+    li $v0, 1                  # direction = right
     j end_input
 
 move_down:
-    add $t2, $t2, $t8               # shift down by BLOCK_SIZE
+    add $t2, $t2, $t8
+    li $v0, 2                  # direction = down
     j end_input
 
 rotate_piece:
     addi $t0, $t0, 1
-    li $t3, 4                       # There are 4 rotations
+    li $t3, 4
     div $t0, $t3
-    mfhi $t0                        # Store the remainder in $t0
+    mfhi $t0
+    li $v0, 3                  # direction = rotate
     
     j end_input
 
 hard_drop_piece:
 
 quit_game:
-    li $v0, 10                      # Quit gracefully
+    li $v0, 10                      # Quit
 	syscall
 
 end_input:
@@ -835,20 +840,21 @@ end_input:
     jr $ra
     
 ## Collisions ##
-# Parameters: $a0 = potential tetromino state
+# Parameters: $a0 = potential tetromino state, $a1 = direction_pressed (0 = left, 1 = right, 2 = down, 3 = rotate)
 # Returns 0 in $v0 if there is a side collision, 1 if there is not, 2 if there is a downwards collision
-
 check_collision:
-    subi $sp, $sp, 24          
+    subi $sp, $sp, 28          
     sw   $s0, 0($sp)           # tetromino state
     sw   $s1, 4($sp)           # x_offset
     sw   $s2, 8($sp)           # y_offset
     sw   $s3, 12($sp)          # piece ptr (after rotation)
     sw   $s4, 16($sp)          # BLOCK_SIZE
-    sw   $ra, 20($sp)          
+    sw   $s5, 20($sp)          # direction parameter
+    sw   $ra, 24($sp)          
     
     # Load potential state
     move $s0, $a0
+    move $s5, $a1              # store direction
     lw $s1, 8($s0)              # x_offset        
     lw $s2, 12($s0)              # y_offset
     
@@ -864,9 +870,112 @@ check_collision:
     jal check_floor_collision
     beq $v0, 2, check_collision_end
     
-    # jal check_grid_collision
+    move $a1, $s5              # pass direction to grid collision
+    jal check_grid_collision
     
     j check_collision_end
+
+check_collision_end:
+    lw $s0, 0($sp)
+    lw $s1, 4($sp)
+    lw $s2, 8($sp)
+    lw $s3, 12($sp)
+    lw $s4, 16($sp)
+    lw $s5, 20($sp)
+    lw $ra, 24($sp)
+    addi $sp, $sp, 28
+    jr $ra
+
+# Parameters: $a1 = direction_pressed (0 = left, 1 = right, 2 = down, 3 = rotate)
+# Uses global registers: $s0 = tetromino state, $s1 = x_offset, $s2 = y_offset, $s3 = piece ptr, $s4 = BLOCK_SIZE
+check_grid_collision:
+    subi $sp, $sp, 20          
+    sw   $s5, 0($sp)           # grid base address
+    sw   $s6, 4($sp)           # tetromino row counter
+    sw   $s7, 8($sp)           # tetromino col counter
+    sw   $t0, 12($sp)          # direction parameter
+    sw   $ra, 16($sp)
+    
+    move $t0, $a1              # store direction parameter
+    la $s5, GRID_SPACE         # base address of grid
+    
+    # Convert screen coordinates to grid coordinates
+    lw $t1, WALL_WIDTH
+    sub $t2, $s1, $t1          # remove wall offset from x_offset
+    div $t2, $s4               # divide by BLOCK_SIZE to get grid column
+    mflo $t2                   # grid_x in $t2
+    
+    div $t3, $s2, $s4          # divide y_offset by BLOCK_SIZE to get grid row  
+    mflo $t3                   # grid_y in $t3
+    
+    # Check all 4x4 tetromino positions
+    li $s6, 0                  # tetromino row counter
+    move $t4, $s3              # current tetromino position
+
+grid_collision_row_loop:
+    beq $s6, 4, grid_collision_no_collision
+    
+    li $s7, 0                  # tetromino col counter
+    
+grid_collision_col_loop:
+    beq $s7, 4, grid_collision_next_row
+    
+    # Check if current tetromino position has a block
+    lw $t5, 0($t4)             # load tetromino block value
+    beqz $t5, grid_collision_col_increment  # skip if no block
+    
+    # Calculate grid position for this tetromino block
+    add $t6, $t2, $s7          # grid_col = grid_x + tetromino_col
+    add $t7, $t3, $s6          # grid_row = grid_y + tetromino_row
+    
+    # Check bounds
+    bltz $t6, grid_collision_col_increment    # skip if col < 0
+    bge $t6, 10, grid_collision_col_increment # skip if col >= 10
+    bltz $t7, grid_collision_col_increment    # skip if row < 0
+    bge $t7, 20, grid_collision_col_increment # skip if row >= 20
+    
+    # Calculate grid array index: (row * 10 + col) * 4
+    li $t8, 10
+    mult $t7, $t8              # row * 10
+    mflo $t8
+    add $t8, $t8, $t6          # row * 10 + col
+    sll $t8, $t8, 2            # multiply by 4 for byte offset
+    
+    # Check if grid position is occupied
+    add $t9, $s5, $t8          # grid address
+    lw $t8, 0($t9)             # load grid value
+    beqz $t8, grid_collision_col_increment    # skip if empty
+    
+    # Collision detected! Determine return value based on direction
+    beq $t0, 2, grid_collision_down    # if direction is down, return 2
+    # For left, right, or rotate (0, 1, 3) - all return 0 (side collision)
+    li $v0, 0                  
+    j grid_collision_end
+
+grid_collision_down:
+    li $v0, 2                  # downward collision
+    j grid_collision_end
+
+grid_collision_col_increment:
+    addi $s7, $s7, 1           # increment tetromino col
+    addi $t4, $t4, 4           # move to next tetromino position
+    j grid_collision_col_loop
+
+grid_collision_next_row:
+    addi $s6, $s6, 1           # increment tetromino row
+    j grid_collision_row_loop
+
+grid_collision_no_collision:
+    li $v0, 1                  # no collision
+
+grid_collision_end:
+    lw $s5, 0($sp)
+    lw $s6, 4($sp)
+    lw $s7, 8($sp)
+    lw $t0, 12($sp)
+    lw $ra, 16($sp)
+    addi $sp, $sp, 20
+    jr $ra
 
 check_wall_collision:
     subi $sp, $sp, 4          
@@ -981,30 +1090,253 @@ loop_check_row:
     mul $t5, $t4, 16             # offset = direction × 16
     add $t1, $t1, $t5            # move to next row
     j loop_check_row
-
-
-check_grid_collision:
-    subi $sp, $sp, 4          
-    sw   $ra, 0($sp)
-    
-    
-    li $t0, 1                # No collision occurred
-    j branch_and_return
     
 break_loop:
     jr $ra
+    
+    
+## Clear lines section
+clear_lines:
+    subi $sp, $sp, 24           # Allocate stack space for 5 registers ($s0-$s3, $ra)
+    sw $s0, 0($sp)              # Save $s0 (current row)
+    sw $s1, 4($sp)              # Save $s1 (grid base address)
+    sw $s2, 8($sp)              # Save $s2 (column counter)
+    sw $s3, 12($sp)             # Save $s3 (row address)
+    sw $ra, 20($sp)             # Save $ra (return address)
+    
+    la $s1, GRID_SPACE          # Load base address of grid into $s1
+    li $s0, 19                  # Start from the bottom row (row 19)
 
-check_collision_end:
-    lw $s0, 0($sp)
-    lw $s1, 4($sp)
-    lw $s2, 8($sp)
-    lw $s3, 12($sp)
-    lw $s4, 16($sp)
-    lw $ra, 20($sp)
-    addi $sp, $sp, 24
+# Loop to identify and clear all full lines first
+clear_all_full_lines_loop:
+    bltz $s0, all_full_lines_cleared # If row < 0, all rows have been checked for clearing
+    
+    # Calculate address of the current row ($s0)
+    li $t0, 10                  # 10 columns per row
+    mult $s0, $t0               # $t0 = current_row * 10 (number of cells)
+    mflo $t0                    # Move result from multiplication to $t0
+    sll $t0, $t0, 2             # $t0 = $t0 * 4 (byte offset for current row)
+    add $s3, $s1, $t0           # $s3 = row address = grid_base_address + offset
+    
+    # Check if the entire current row ($s3) is filled
+    li $s2, 0                   # Initialize column counter to 0
+    li $t1, 1                   # Assume row is full (flag: 1 = full, 0 = not full)
+
+check_row_columns_for_full:
+    beq $s2, 10, row_full_check_done # If column counter reaches 10, all columns checked
+    
+    sll $t2, $s2, 2             # $t2 = column * 4 (byte offset for current cell in row)
+    add $t3, $s3, $t2           # $t3 = address of current cell
+    lw $t4, 0($t3)              # Load cell value into $t4
+    beqz $t4, row_not_full_for_clear # If cell value is 0, row is not full
+    
+    addi $s2, $s2, 1            # Increment column counter
+    j check_row_columns_for_full # Continue checking next column
+
+row_not_full_for_clear:
+    li $t1, 0                   # Mark row as not full (set flag to 0)
+
+row_full_check_done:
+    beqz $t1, next_row_to_check # If row is not full, skip clearing and check next row
+    
+    # Row IS full - clear it (set all cells to 0)
+    # The clear_current_row subroutine uses $s3, which already holds the current row address
+    jal clear_current_row       # Call subroutine to clear the identified full row
+    
+next_row_to_check:
+    subi $s0, $s0, 1            # Move to the next row up
+    j clear_all_full_lines_loop # Continue checking rows
+
+all_full_lines_cleared:
+    # After all full lines have been identified and cleared (set to 0s),
+    # now shift the remaining blocks down to fill the gaps.
+    jal shift_rows_down         # Call the new shifting function
+
+clear_lines_done:
+    lw $s0, 0($sp)              # Restore $s0
+    lw $s1, 4($sp)              # Restore $s1
+    lw $s2, 8($sp)              # Restore $s2
+    lw $s3, 12($sp)             # Restore $s3
+    lw $ra, 20($sp)             # Restore $ra
+    addi $sp, $sp, 24           # Deallocate stack space
+    jr $ra                      # Return from clear_lines
+    
+    
+clear_current_row:
+    li $t0, 0                   # Initialize column counter to 0
+    
+clear_row_loop:
+    beq $t0, 10, clear_row_done # If column counter reaches 10, all columns cleared
+    
+    sll $t1, $t0, 2             # $t1 = column * 4 (byte offset)
+    add $t2, $s3, $t1           # $t2 = address of current cell in the row
+    sw $zero, 0($t2)            # Store 0 (from $zero register) into the cell, effectively clearing it
+    
+    addi $t0, $t0, 1            # Increment column counter
+    j clear_row_loop            # Continue clearing next column
+
+clear_row_done:
+    jr $ra                      # Return from clear_current_row
+    
+shift_rows_down:
+    subi $sp, $sp, 32           
+    sw $s0, 0($sp)              # write_row - where to write next solid row
+    sw $s1, 4($sp)              # read_row - current row being examined
+    sw $s2, 8($sp)              # grid base address
+    sw $s3, 12($sp)             # column counter
+    sw $s4, 16($sp)             # read row address
+    sw $s5, 20($sp)             # write row address
+    sw $s6, 24($sp)             # empty line counter
+    sw $ra, 28($sp)             # return address
+    
+    la $s2, GRID_SPACE          # Load base address of grid
+    li $s0, 19                  # write_row starts at bottom (row 19)
+    li $s1, 19                  # read_row starts at bottom (row 19)
+    li $s6, 0                   # empty line counter
+
+shift_main_loop:
+    bltz $s1, shift_done        # If read_row < 0, we're done
+    
+    # Calculate address of read row
+    li $t0, 10                  # 10 columns per row
+    mult $s1, $t0               # read_row * 10
+    mflo $t0
+    sll $t0, $t0, 2             # multiply by 4 for byte offset
+    add $s4, $s2, $t0           # $s4 = read row address
+    
+    # Check if current read row is empty
+    jal is_row_empty            # Uses $s4 as row address, returns result in $v0
+    beq $v0, 1, empty_row_found # If row is empty, handle it
+    
+    # Row is not empty - reset empty counter and copy if needed
+    li $s6, 0                   # reset empty line counter
+    
+    # Only copy row if write_row != read_row (this mean we've skipped some empty rows)
+    beq $s0, $s1, no_copy_needed
+    
+    # Calculate address of write row
+    li $t0, 10                  # 10 columns per row
+    mult $s0, $t0               # write_row * 10
+    mflo $t0
+    sll $t0, $t0, 2             # multiply by 4 for byte offset
+    add $s5, $s2, $t0           # $s5 = write row address
+    
+    # Copy row from read position to write position
+    jal copy_row                # Copy from $s4 (read) to $s5 (write)
+    
+no_copy_needed:
+    subi $s0, $s0, 1            # Move write_row up one position
+    j next_read_row
+
+empty_row_found:
+    addi $s6, $s6, 1            # Increment empty line counter
+    
+    # Check if we've found 5 consecutive empty rows
+    beq $s6, 5, shift_done      # If 5 empty rows in a row, no more line clears possible
+    
+    # Don't update write_row for empty rows bc we're skipping them
+
+next_read_row:
+    subi $s1, $s1, 1            # Move to next row up
+    j shift_main_loop
+
+shift_done:
+    # Only clear rows above the write position if we actually moved any rows down
+    # (if write_row is now different from where it started)
+    beq $s0, 19, shift_complete # If write_row is still 19, no rows were moved
+    
+clear_remaining_rows:
+    bltz $s0, shift_complete    # If write_row < 0, we're done clearing
+    
+    # Calculate address of row to clear
+    li $t0, 10                  # 10 columns per row
+    mult $s0, $t0               # row * 10
+    mflo $t0
+    sll $t0, $t0, 2             # multiply by 4 for byte offset
+    add $s5, $s2, $t0           # $s5 = row address to clear
+    
+    jal clear_row               # Clear the row at $s5
+    subi $s0, $s0, 1            # Move to next row up
+    j clear_remaining_rows
+
+shift_complete:
+    lw $s0, 0($sp)              # Restore $s0
+    lw $s1, 4($sp)              # Restore $s1  
+    lw $s2, 8($sp)              # Restore $s2
+    lw $s3, 12($sp)             # Restore $s3
+    lw $s4, 16($sp)             # Restore $s4
+    lw $s5, 20($sp)             # Restore $s5
+    lw $s6, 24($sp)             # Restore $s6
+    lw $ra, 28($sp)             # Restore $ra
+    addi $sp, $sp, 32           # Deallocate stack space
+    jr $ra                      # Return
+
+
+# Input: $s4 = row address
+# Returns: $v0 = 1 if empty, 0 if not empty
+is_row_empty:
+    li $t0, 0                   # column counter
+    li $v0, 1                   # assume row is empty
+    
+check_empty_loop:
+    beq $t0, 10, empty_check_done # If we've checked all 10 columns
+    
+    sll $t1, $t0, 2             # column * 4 for byte offset
+    add $t2, $s4, $t1           # address of current cell
+    lw $t3, 0($t2)              # load cell value
+    bnez $t3, row_not_empty     # if cell is not zero, row is not empty
+    
+    addi $t0, $t0, 1            # increment column counter
+    j check_empty_loop
+
+row_not_empty:
+    li $v0, 0                   # row is not empty
+
+empty_check_done:
     jr $ra
 
-# Resets and updates
+# Helper function: Copy one row to another
+# Input: $s4 = source row address, $s5 = destination row address
+copy_row:
+    li $t0, 0                   # column counter
+    
+copy_loop:
+    beq $t0, 10, copy_done      # If we've copied all 10 columns
+    
+    sll $t1, $t0, 2             # column * 4 for byte offset
+    add $t2, $s4, $t1           # source cell address
+    add $t3, $s5, $t1           # destination cell address
+    
+    lw $t4, 0($t2)              # load from source
+    sw $t4, 0($t3)              # store to destination
+    
+    addi $t0, $t0, 1            # increment column counter
+    j copy_loop
+
+copy_done:
+    jr $ra
+
+# Helper function: Clear a row (set all cells to 0)
+# Input: $s5 = row address
+clear_row:
+    li $t0, 0                   # column counter
+    
+clear_loop:
+    beq $t0, 10, clear_done     # If we've cleared all 10 columns
+    
+    sll $t1, $t0, 2             # column * 4 for byte offset
+    add $t2, $s5, $t1           # cell address
+    sw $zero, 0($t2)            # store 0 in cell
+    
+    addi $t0, $t0, 1            # increment column counter
+    j clear_loop
+
+clear_done:
+    jr $ra
+
+
+
+## Resets and updates
 reset:
     # Reset potential state
     move $a1, $s0
@@ -1012,7 +1344,7 @@ reset:
 	jal update_tetromino_state
     
     li 		$v0, 32
-	li 		$a0, 16
+	li 		$a0, 8           # sleep for 16ms
 	syscall
 	j game_loop
 
@@ -1100,6 +1432,8 @@ next_row:
     j store_piece_index
 
 restore_and_exit:
+    jal clear_lines             # Clear lines after piece is stored
+    
     lw $s0, 0($sp)
     lw $s1, 4($sp)
     lw $s2, 8($sp)
@@ -1147,9 +1481,11 @@ game_loop:
     # 1b. Check which key has been pressed
     move $a0, $s1
     jal keyboard_input
+    move $s2, $v0
     # 2a. Check for collisions
     
-    move $a0, $s1 
+    move $a0, $s1
+    move $a1, $s2
     jal check_collision
     beqz $v0, reset
     beq $v0, 2, store_piece
