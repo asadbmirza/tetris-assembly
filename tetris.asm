@@ -17,7 +17,8 @@
 # Easy Features:
 # 1. All tetrominoes are different colours
 # 2. Gravity
-# 3. Faster gravity as time goes on
+# 3. Faster gravity every 10 lines cleared
+# 4. Piece outlines before they drop
 # Hard Features:
 # 1. All tetrominoes implemented
 # 2. (fill in the feature, if any)
@@ -225,6 +226,9 @@ j_pieces:
     # Rotation 3
     .word 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0
 
+animation_colors:
+    .word 0xff6b35      # Primary: Bright orange
+    .word 0xff0000      # Secondary: Red
 
 ##############################################################################
 # Code
@@ -315,6 +319,7 @@ get_piece_data:
     beq $a0, 5, load_t_piece
     beq $a0, 6, load_l_piece
     beq $a0, 7, load_j_piece
+    beq $a0, 8, load_animation_piece
     j get_piece_done
     
 load_s_piece:
@@ -337,6 +342,14 @@ load_l_piece:
     j load_piece_common
 load_j_piece:
     la $t0, j_pieces
+    j load_piece_common
+load_animation_piece:
+    la $t0, animation_colors
+    lw $v1, 0($t0)
+    # For animation, we don't need rotation data, just return a dummy address
+    la $v0, animation_colors
+    addi $v0, $v0, 8    # Skip the color data
+    j get_piece_done
     
 load_piece_common:
     # Load colors
@@ -365,6 +378,7 @@ get_secondary_color:
     beq $a0, 5, get_t_secondary
     beq $a0, 6, get_l_secondary
     beq $a0, 7, get_j_secondary
+    beq $a0, 8, get_animation_secondary
     jr $ra
     
 get_s_secondary:
@@ -393,6 +407,10 @@ get_l_secondary:
     jr $ra
 get_j_secondary:
     la $t0, j_pieces
+    lw $v0, 4($t0)
+    jr $ra
+get_animation_secondary:
+    la $t0, animation_colors
     lw $v0, 4($t0)
     jr $ra
 
@@ -907,62 +925,89 @@ check_input:
     jr $ra
 
 
-# Parameters: $a0 = potential_tetromino_state
+# Parameters: $a0 = potential_tetromino_state, $a1 = current_tetromino_state
 keyboard_input:
-    lw $t8, BLOCK_SIZE
-    lw $t0, 4($a0)                  # rotation
-    lw $t1, 8($a0)                  # x_offset
-    lw $t2, 12($a0)                  # y_offset
+    subi $sp, $sp, 24
+    sw $s0, 0($sp)                  # potential tetromino state address
+    sw $s1, 4($sp)                  # BLOCK_SIZE
+    sw $s2, 8($sp)                  # key pressed
+    sw $s3, 12($sp)                 # keyboard address
+    sw $s4, 16($sp)                 # current_tetromino state address
+    sw $ra, 20($sp)
     
-    lw $t9, ADDR_KBRD               # $t9 = base address for keyboardare 
-    lw $t3, 4($t9)                  # Key Pressed
-    beq $t3, 0x61, move_left        # Check if the key a was pressed
-    beq $t3, 0x41, move_left        # Check if the key A was pressed
-    beq $t3, 0x64, move_right       # Check if the key d was pressed
-    beq $t3, 0x44, move_right       # Check if the key D was pressed
-    beq $t3, 0x73, move_down        # Check if the key s was pressed
-    beq $t3, 0x53, move_down        # Check if the key S was pressed
-    beq $t3, 0x77, rotate_piece     # Check if the key w was pressed
-    beq $t3, 0x57, rotate_piece     # Check if the key W was pressed
-    beq $t3, 0x20, hard_drop_piece  # Check if the space bar was pressed
-    beq $t3, 0x71, quit_game        # Check if the key q was pressed
-    beq $t3, 0x51, quit_game        # Check if the key Q was pressed
+    move $s0, $a0                   # Store potential tetromino state address
+    move $s4, $a1                   # store current state address
+    lw $s1, BLOCK_SIZE
+    
+    lw $s3, ADDR_KBRD               # $s3 = base address for keyboard
+    lw $s2, 4($s3)                  # Key Pressed
+    beq $s2, 0x61, move_left        # Check if the key a was pressed
+    beq $s2, 0x41, move_left        # Check if the key A was pressed
+    beq $s2, 0x64, move_right       # Check if the key d was pressed
+    beq $s2, 0x44, move_right       # Check if the key D was pressed
+    beq $s2, 0x73, move_down        # Check if the key s was pressed
+    beq $s2, 0x53, move_down        # Check if the key S was pressed
+    beq $s2, 0x77, rotate_piece     # Check if the key w was pressed
+    beq $s2, 0x57, rotate_piece     # Check if the key W was pressed
+    beq $s2, 0x20, hard_drop_piece  # Check if the space bar was pressed
+    beq $s2, 0x71, quit_game        # Check if the key q was pressed
+    beq $s2, 0x51, quit_game        # Check if the key Q was pressed
     j end_input
     
 move_left: 
-    sub $t1, $t1, $t8
-    li $v0, 0                  # direction = left
+    lw $t0, 8($s0)                  # Load x_offset
+    sub $t0, $t0, $s1               # Subtract BLOCK_SIZE
+    sw $t0, 8($s0)                  # Store back x_offset
+    li $v0, 0                       # direction = left
     j end_input
     
 move_right:
-    add $t1, $t1, $t8
-    li $v0, 1                  # direction = right
+    lw $t0, 8($s0)                  # Load x_offset
+    add $t0, $t0, $s1               # Add BLOCK_SIZE
+    sw $t0, 8($s0)                  # Store back x_offset
+    li $v0, 1                       # direction = right
     j end_input
 
 move_down:
-    add $t2, $t2, $t8
-    li $v0, 2                  # direction = down
+    lw $t0, 12($s0)                 # Load y_offset
+    add $t0, $t0, $s1               # Add BLOCK_SIZE
+    sw $t0, 12($s0)                 # Store back y_offset
+    li $v0, 2                       # direction = down
     j end_input
 
 rotate_piece:
-    addi $t0, $t0, 1
-    li $t3, 4
-    div $t0, $t3
-    mfhi $t0
-    li $v0, 3                  # direction = rotate
-    
+    lw $t0, 4($s0)                  # Load rotation
+    addi $t0, $t0, 1                # Increment rotation
+    li $t1, 4
+    div $t0, $t1
+    mfhi $t0                        # Get remainder (0-3)
+    sw $t0, 4($s0)                  # Store back rotation
+    li $v0, 3                       # direction = rotate
     j end_input
 
 hard_drop_piece:
+    move $a0, $s0               
+    jal calculate_bottom_y_offset
+    move $t0, $v0
+    
+    sw $t0, 12($s4)                 # Store new y_offset in current_tetromino_state
+    add $t0, $t0, $s1              # Add block size
+    sw $t0, 12($s0)
+    j end_input
 
 quit_game:
     li $v0, 10                      # Quit
-	syscall
+    syscall
 
 end_input:
-    sw $t0, 4($a0)                  # rotation
-    sw $t1, 8($a0)                  # x_offset
-    sw $t2, 12($a0)                 # y_offset 
+    # Restore saved registers
+    lw $s0, 0($sp)
+    lw $s1, 4($sp)
+    lw $s2, 8($sp)
+    lw $s3, 12($sp)
+    lw $s4, 16($sp)
+    lw $ra, 20($sp)
+    addi $sp, $sp, 16
     jr $ra
     
 ## Collisions ##
@@ -1270,7 +1315,7 @@ row_full_check_done:
     lw $t9, LINES_CLEARED
     addi $t9, $t9, 1
     sw $t9, LINES_CLEARED
-    jal clear_current_row       # Call subroutine to clear the identified full row
+    jal clear_current_row       # Call function to clear the identified full row
     
 next_row_to_check:
     subi $s0, $s0, 1            # Move to the next row up
@@ -1292,6 +1337,33 @@ clear_lines_done:
     
     
 clear_current_row:
+    subi $sp, $sp, 4            # Save return address
+    sw $ra, 0($sp)
+    
+    # Fill row with value 8 for animation
+    li $t0, 0                   # Initialize column counter to 0
+    
+animate_row_loop:
+    beq $t0, 10, animate_row_done 
+    
+    sll $t1, $t0, 2             # $t1 = column * 4 (byte offset)
+    add $t2, $s3, $t1           # $t2 = address of current cell in the row
+    li $t3, 8                   # Animation value
+    sw $t3, 0($t2)              # Store 8 for animation effect
+    
+    addi $t0, $t0, 1            # Increment column counter
+    j animate_row_loop          # Continue animating next column
+
+animate_row_done:
+    # Call fill_grid to show the animation frame
+    jal fill_grid
+    
+    # Add a small delay to make animation visible
+    li $v0, 32                  # System call for sleep
+    li $a0, 200                 # Sleep for 100ms to show animation
+    syscall
+    
+    # Clear the row
     li $t0, 0                   # Initialize column counter to 0
     
 clear_row_loop:
@@ -1305,6 +1377,8 @@ clear_row_loop:
     j clear_row_loop            # Continue clearing next column
 
 clear_row_done:
+    lw $ra, 0($sp)              # Restore return address
+    addi $sp, $sp, 4
     jr $ra                      # Return from clear_current_row
     
 shift_rows_down:
@@ -1645,19 +1719,16 @@ game_loop:
 	beqz $v0, reset
 	# 1b. Check which key has been pressed
 	move $a0, $s1
+	move $a1, $s0
     jal keyboard_input
     
 	j game_loop_p2
 
 gravity_drop:
-    move $a0, $s1
-    
-    # Load variables
-    lw $t8, BLOCK_SIZE
-    lw $t0, 4($a0)                  # rotation
-    lw $t1, 8($a0)                  # x_offset
-    lw $t2, 12($a0)                  # y_offset
-    jal move_down
+    lw $t0, 12($s1)                 # Load y_offset
+    lw $t1, BLOCK_SIZE
+    add $t0, $t0, $t1               # Add BLOCK_SIZE
+    sw $t0, 12($s1)                 # Store back y_offset
     
     #reset gravity
     la $t0, GRAVITY_DELAY
@@ -1665,6 +1736,7 @@ gravity_drop:
     add $t0, $t1, $t0
     
     lw $s3, 0($t0)
+    li $v0, 2
 
 game_loop_p2:
     move $s2, $v0
