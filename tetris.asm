@@ -21,10 +21,13 @@
 # 4. Piece outlines before they drop
 # Hard Features:
 # 1. All tetrominoes implemented
-# 2. (fill in the feature, if any)
-# ... (add more if necessary)
+# 2. Animation when clearing
+
 # How to play:
-# (Include any instructions)
+# A/D Move left and right
+# W Rotates
+# S Move down
+# Space drops piece to bottom
 # Link to video demonstration for final submission:
 # - (insert YouTube / MyMedia / other URL here). Make sure we can view it!
 #
@@ -986,14 +989,12 @@ rotate_piece:
     j end_input
 
 hard_drop_piece:
-    move $a0, $s0               
-    jal calculate_bottom_y_offset
-    move $t0, $v0
-    
+    la $t0, outline_tetromino_state
+    lw $t0, 12($t0)
+ 
     sw $t0, 12($s4)                 # Store new y_offset in current_tetromino_state
-    add $t0, $t0, $s1              # Add block size
     sw $t0, 12($s0)
-    j end_input
+    jal move_down
 
 quit_game:
     li $v0, 10                      # Quit
