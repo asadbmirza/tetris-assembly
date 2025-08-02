@@ -83,16 +83,19 @@ GRID_SPACE:
     .space 800           # 10 * 20 gameboard, each space is 4 bytes
 
 GRAVITY_DELAY:
-    .word 60, 43, 30, 10, 5, 4, 3, 2   # Base gravity delay is every 60 refreshes, increases with every 5 line clears. 
+    .word 60, 43, 30, 10, 5, 4, 3, 2   # Base gravity delay is every 60 refreshes, increases with every 10 line clears. 
 
 GRAVITY_INDEX:
     .word 0
+    
+LAST_GRAVITY_LEVEL:
+    .word 0                             # Track the last gravity level(quotient) applied
 
 LINES_CLEARED:
     .word 0
     
 MAX_LINES_CLEARED:
-    .word 40                            # 5 rows * 8 levels
+    .word 80                            # 10 rows * 8 levels
 
 # Colours
 wallColour:
@@ -1365,26 +1368,36 @@ reset:
 	syscall
 	
 	## Gravity stuff
-	subi $s3, $s3, 1          # decrease gravity count
-	lw $t0, LINES_CLEARED
-	li $t1, 5
-	div $t0, $t1              # check if its a multiple of 5
-	mfhi $t1
-	beqz $t1, increase_gravity
-	
-	j game_loop
+    subi $s3, $s3, 1          # decrease gravity count
+    lw $t0, LINES_CLEARED
+    li $t1, 10
+    div $t0, $t1              # check if its a multiple of 10
+    mfhi $t2                  # remainder
+    mflo $t3                  # quotient (gravity level) in $t3
+    
+    # Only increase gravity if we haven't already applied this level
+    lw $t4, LAST_GRAVITY_LEVEL
+    bne $t3, $t4, check_if_should_increase  # If current level != last level, check further
+    j game_loop 
+
+check_if_should_increase:
+    beqz $t2, increase_gravity              # If remainder is 0 AND level changed, increase gravity
+    j game_loop
 
 increase_gravity:
     lw $t1, MAX_LINES_CLEARED
-    bge $t0, $t1, increase_gravity_end      # if lines cleared is greater than or equal to max lines
+    bge $t0, $t1, increase_gravity_end      # if lines cleared >= max lines
+    
+    # Update the last gravity level applied
+    sw $t3, LAST_GRAVITY_LEVEL              # Store current gravity level
     
     lw $t1, GRAVITY_INDEX
-    addi $t1, $t1, 4                    # go to next index
+    addi $t1, $t1, 4                        # go to next index
     sw $t1, GRAVITY_INDEX
     
     la $t0, GRAVITY_DELAY
-    add $t0, $t0, $t1                   # go to next index
-    sw $s3, 0($t0)                  # update $s3
+    add $t0, $t0, $t1                       # go to correct index in array
+    lw $s3, 0($t0)                          # LOAD the new gravity delay value into $s3
     
     
 increase_gravity_end:
@@ -1542,7 +1555,7 @@ gravity_drop:
     lw $t1, GRAVITY_INDEX
     add $t0, $t1, $t0
     
-    sw $s3, 0($t0)
+    lw $s3, 0($t0)
 
 game_loop_p2:
     move $s2, $v0
