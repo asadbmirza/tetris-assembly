@@ -10,16 +10,16 @@
 #
 # Which milestones have been reached in this submission?
 # (See the assignment handout for descriptions of the milestones)
-# - Milestone 1/2/3/ (choose the one the applies)
+# - Milestone 1/2/3/4/5 (choose the one the applies)
 #
 # Which approved features have been implemented?
 # (See the assignment handout for the list of features)
 # Easy Features:
-# 1. (fill in the feature, if any)
-# 2. (fill in the feature, if any)
-# ... (add more if necessary)
+# 1. All tetrominoes are different colours
+# 2. Gravity
+# 3. Faster garvity as time goes on
 # Hard Features:
-# 1. (fill in the feature, if any)
+# 1. All tetrominoes implemented
 # 2. (fill in the feature, if any)
 # ... (add more if necessary)
 # How to play:
@@ -81,6 +81,21 @@ DISPLAY_INCREMENT:
 
 GRID_SPACE:
     .space 800           # 10 * 20 gameboard, each space is 4 bytes
+
+GRAVITY_DELAY:
+    .word 60, 43, 30, 10, 5, 4, 3, 2   # Base gravity delay is every 60 refreshes, increases with every 10 line clears. 
+
+GRAVITY_INDEX:
+    .word 0
+    
+LAST_GRAVITY_LEVEL:
+    .word 0                             # Track the last gravity level(quotient) applied
+
+LINES_CLEARED:
+    .word 0
+    
+MAX_LINES_CLEARED:
+    .word 80                            # 10 rows * 8 levels
 
 # Colours
 wallColour:
@@ -219,14 +234,16 @@ main:
     jal draw_frame
     
     ## Load current tetromino
-    subi $sp, $sp, 12
+    subi $sp, $sp, 20
     sw $s0, 0($sp)              # tetromino's state
     sw $s1, 4($sp)              # tetromino's next potential state
     sw $s2, 8($sp)              # keyboard_input
-    sw $ra, 12($sp)
+    sw $s3, 12($sp)             # current gravity counter
+    sw $ra, 16($sp)
     
     la $s0, current_tetromino_state
     la $s1, potential_tetromino_state
+    lw $s3, GRAVITY_DELAY
     
     jal generate_new_piece         # generate random piece                  
     
@@ -1139,8 +1156,11 @@ row_not_full_for_clear:
 row_full_check_done:
     beqz $t1, next_row_to_check # If row is not full, skip clearing and check next row
     
-    # Row IS full - clear it (set all cells to 0)
+    # Row IS full, clear it (set all cells to 0)
     # The clear_current_row subroutine uses $s3, which already holds the current row address
+    lw $t9, LINES_CLEARED
+    addi $t9, $t9, 1
+    sw $t9, LINES_CLEARED
     jal clear_current_row       # Call subroutine to clear the identified full row
     
 next_row_to_check:
@@ -1344,9 +1364,44 @@ reset:
 	jal update_tetromino_state
     
     li 		$v0, 32
-	li 		$a0, 8           # sleep for 16ms
+	li 		$a0, 16           # sleep for 16ms
 	syscall
-	j game_loop
+	
+	## Gravity stuff
+    subi $s3, $s3, 1          # decrease gravity count
+    lw $t0, LINES_CLEARED
+    li $t1, 10
+    div $t0, $t1              # check if its a multiple of 10
+    mfhi $t2                  # remainder
+    mflo $t3                  # quotient (gravity level) in $t3
+    
+    # Only increase gravity if we haven't already applied this level
+    lw $t4, LAST_GRAVITY_LEVEL
+    bne $t3, $t4, check_if_should_increase  # If current level != last level, check further
+    j game_loop 
+
+check_if_should_increase:
+    beqz $t2, increase_gravity              # If remainder is 0 AND level changed, increase gravity
+    j game_loop
+
+increase_gravity:
+    lw $t1, MAX_LINES_CLEARED
+    bge $t0, $t1, increase_gravity_end      # if lines cleared >= max lines
+    
+    # Update the last gravity level applied
+    sw $t3, LAST_GRAVITY_LEVEL              # Store current gravity level
+    
+    lw $t1, GRAVITY_INDEX
+    addi $t1, $t1, 4                        # go to next index
+    sw $t1, GRAVITY_INDEX
+    
+    la $t0, GRAVITY_DELAY
+    add $t0, $t0, $t1                       # go to correct index in array
+    lw $s3, 0($t0)                          # LOAD the new gravity delay value into $s3
+    
+    
+increase_gravity_end:
+    j game_loop
 
 # Parameters: $a0 = old state, $a1 = new state
 update_tetromino_state:
@@ -1474,13 +1529,35 @@ generate_new_piece:
      j setup_game_loop
 
 game_loop:
-    
+    # if the gravity counter has gone to less than zero, drop the piece and don't receive input
+    bltz $s3, gravity_drop
 	# 1a. Check if key has been pressed
 	jal check_input
 	beqz $v0, reset
-    # 1b. Check which key has been pressed
-    move $a0, $s1
+	# 1b. Check which key has been pressed
+	move $a0, $s1
     jal keyboard_input
+    
+	j game_loop_p2
+
+gravity_drop:
+    move $a0, $s1
+    
+    # Load variables
+    lw $t8, BLOCK_SIZE
+    lw $t0, 4($a0)                  # rotation
+    lw $t1, 8($a0)                  # x_offset
+    lw $t2, 12($a0)                  # y_offset
+    jal move_down
+    
+    #reset gravity
+    la $t0, GRAVITY_DELAY
+    lw $t1, GRAVITY_INDEX
+    add $t0, $t1, $t0
+    
+    lw $s3, 0($t0)
+
+game_loop_p2:
     move $s2, $v0
     # 2a. Check for collisions
     
