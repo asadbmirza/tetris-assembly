@@ -17,7 +17,7 @@
 # Easy Features:
 # 1. All tetrominoes are different colours
 # 2. Gravity
-# 3. Faster garvity as time goes on
+# 3. Faster gravity as time goes on
 # Hard Features:
 # 1. All tetrominoes implemented
 # 2. (fill in the feature, if any)
@@ -119,6 +119,12 @@ potential_tetromino_state:
     .word 26   # x_offset  
     .word 0   # y_offset
 
+outline_tetromino_state:
+    .word 3   # piece
+    .word 0   # rotation
+    .word 26   # x_offset  
+    .word 0   # y_offset
+
 ## Blocks (Stored in a 4 x 4 grid)
 
 # S-piece
@@ -134,7 +140,7 @@ s_pieces:
     .word 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0
     # Rotation 3
     .word 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
-
+    
 # Z-piece
 z_pieces:
     # Colours
@@ -218,7 +224,7 @@ j_pieces:
     .word 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0
     # Rotation 3
     .word 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0
-    
+
 
 ##############################################################################
 # Code
@@ -251,11 +257,21 @@ main:
     
 setup_game_loop:
     jal draw_grid
+    
+    move $a0, $s0                 
+	jal draw_outline               # y_outline is calculated in the function
+    
     lw $a0, 0($s0)                 # current piece
-	lw $a1, 4($s0)                 # x_offset
-	lw $a2, 8($s0)                 # y_offset
-	lw $a3, 12($s0)                # rotation
-	jal draw_tetromino             # draw initial tetromino
+	lw $a1, 4($s0)                 # rotation
+	lw $a2, 8($s0)                 # x_offset
+	lw $a3, 12($s0)                # y_offset 
+	subi $sp, $sp, 4
+	li $t0, 0
+	sw $t0, 0($sp)                 # is_outline is false
+	jal draw_tetromino
+	
+	
+
     j game_loop
 
 ## Helper Functions ##
@@ -714,35 +730,50 @@ draw_block_row_finished:
     jr $ra
 
 
-# Parameters: $a0 = tetromino_piece(0,...,6), $a1 = tetromino_rotation(0, 1, 2, 3), $a2 = x_offset, $a3 = y_offset
+# Parameters: $a0 = piece (0-6), $a1 = rotation (0-3), $a2 = x_offset, $a3 = y_offset
+# Stack (before call): 0($sp) = is_outline
+
 draw_tetromino:
-    subi $sp, $sp, 20
+    subi $sp, $sp, 24
     sw $s0, 0($sp)              # Row counter
     sw $s1, 4($sp)              # x_offset
     sw $s2, 8($sp)              # Col counter
     sw $s3, 12($sp)             # BLOCK_SIZE
-    sw $s4, 16($sp)             # Tetromino address
+    sw $s4, 16($sp)             # Tetromino base address
     sw $ra, 20($sp)
-    
-    li $s0, 4                   # Tetromino's are 4 x 4 at max
-    move $s1, $a2               # Load x_offset into saved register
-    
-    # Get piece data such as colours and rotation
-    jal get_piece_data          # $v0 will have tetromino address, $v1 = primary colour
-    move $s4, $v0
-    jal get_secondary_color     # $v0 will have secondary colour
-    
+
+    li $s0, 4                   # Max 4 rows
+    move $s1, $a2               # x_offset
+
+    # Get piece base and primary color
+    jal get_piece_data          # $v0 = piece addr, $v1 = primary color
+    move $s4, $v0               # Save piece base addr
+
+    # Get secondary color
+    jal get_secondary_color     # $v0 = secondary color
+
+    # Load is_outline
+    lw $t0, 24($sp)             # $t0 = is_outline
+    li $t1, 1
+    bne $t0, $t1, skip_outline_override
+
+    # If is_outline == 1, overwrite both colours with white
+    li $v1, 0xffffff            # Primary = white
+    li $v0, 0xffffff            # Secondary = white
+
+skip_outline_override:
+    # Save colors to stack
     subi $sp, $sp, 12
-    sw $v1, 0($sp)              # Primary Colour
-    sw $v0, 4($sp)              # Secondary Colour
-    # the rows's ra will be stored in the 8th index
-    
+    sw $v1, 0($sp)              # Primary colour
+    sw $v0, 4($sp)              # Secondary colour
+    # slot 8($sp) reserved for row function return address if needed
+
     lw $s3, BLOCK_SIZE
-    
-    # Prep paramaters for drawing the block
-    lw $a0, ADDR_DSPL           # base_addr
-    move $a1, $a2
-    move $a2, $a3
+
+    # Prep draw_block parameters
+    lw $a0, ADDR_DSPL           # Display base
+    move $a1, $a2               # x_offset
+    move $a2, $a3               # y_offset
 
 draw_tetromino_row:
     beqz $s0, draw_tetromino_row_finished
@@ -786,9 +817,87 @@ draw_tetromino_row_finished:
     lw $s3, 12($sp)
     lw $s4, 16($sp)
     lw $ra, 20($sp)
-    addi $sp, $sp, 20
+    addi $sp, $sp, 24
     jr $ra
 
+# Parameters: $a0 = current_tetromino_state
+draw_outline:
+    subi $sp, $sp, 8
+    sw $s0, 0($sp)              # Save outline tetromino state address
+    sw $ra, 4($sp)              
+
+    move $a1, $a0
+    la $s0, outline_tetromino_state
+    move $a0, $s0
+    jal update_tetromino_state
+    
+    move $a0, $s0
+    jal calculate_bottom_y_offset
+    
+    move $t0, $v0               # this is the bottomost y_offset
+    sw $t0, 12($s0)             # store in outline tetromino
+    
+    lw $a0, 0($s0)                 # current piece
+	lw $a1, 4($s0)                 # rotation
+	lw $a2, 8($s0)                 # x_offset
+	lw $a3, 12($s0)                # y_offset 
+	subi $sp, $sp, 4
+	li $t0, 1
+	sw $t0, 0($sp)                 # is_outline is true
+	jal draw_tetromino
+	addi $sp, $sp, 4
+	
+    lw $s0, 0($sp)             
+    lw $ra, 4($sp)  
+    addi $sp, $sp, 8
+    jr $ra
+
+# Parameters: $a0 = state of tetromino
+# Returns bottom y offset in $v0
+calculate_bottom_y_offset:
+    subi $sp, $sp, 20
+    sw $s0, 0($sp)              # Save tetromino state address
+    sw $s1, 4($sp)              # Save BLOCK_SIZE
+    sw $s2, 8($sp)              # Save current y_offset being tested
+    sw $s3, 12($sp)             # Save original y_offset
+    sw $ra, 16($sp)             # Save return address
+    
+    move $s0, $a0               # Store tetromino state address
+    lw $s1, BLOCK_SIZE          # Load BLOCK_SIZE for incrementing
+    lw $s3, 12($s0)             # Save original y_offset
+    move $s2, $s3               # Start with original y_offset
+    
+drop_loop:
+    # Increment y_offset by BLOCK_SIZE
+    add $s2, $s2, $s1           # y_offset += BLOCK_SIZE
+    sw $s2, 12($s0)             # Store new y_offset in tetromino state
+    
+    # Check collision with new position
+    move $a0, $s0               # tetromino state
+    li $a1, 2                   # direction = down (2)
+    jal check_collision
+    
+    # Check collision result
+    beq $v0, 1, drop_loop       # If no collision (1), continue dropping
+    # If we get here, we hit something (collision type 0 or 2)
+    
+collision_found:
+    # The previous y_offset was the last valid position
+    sub $s2, $s2, $s1           # Go back one BLOCK_SIZE (last valid position)
+    move $v0, $s2               # Return the bottom y_offset
+    
+    # Restore original y_offset in the tetromino state
+    sw $s3, 12($s0)             # Restore original y_offset
+    
+    # Restore registers and return
+    lw $s0, 0($sp)
+    lw $s1, 4($sp)
+    lw $s2, 8($sp)
+    lw $s3, 12($sp)
+    lw $ra, 16($sp)
+    addi $sp, $sp, 20
+    jr $ra
+    
 
 ## CONTROLS ##
 # Returns 0 or 1 depending on if key is pressed
@@ -857,7 +966,7 @@ end_input:
     jr $ra
     
 ## Collisions ##
-# Parameters: $a0 = potential tetromino state, $a1 = direction_pressed (0 = left, 1 = right, 2 = down, 3 = rotate)
+# Parameters: $a0 = potential tetromino state/outline_tetromino_state, $a1 = direction_pressed (0 = left, 1 = right, 2 = down, 3 = rotate)
 # Returns 0 in $v0 if there is a side collision, 1 if there is not, 2 if there is a downwards collision
 check_collision:
     subi $sp, $sp, 28          
@@ -963,7 +1072,7 @@ grid_collision_col_loop:
     lw $t8, 0($t9)             # load grid value
     beqz $t8, grid_collision_col_increment    # skip if empty
     
-    # Collision detected! Determine return value based on direction
+    # Collision detected
     beq $t0, 2, grid_collision_down    # if direction is down, return 2
     # For left, right, or rotate (0, 1, 3) - all return 0 (side collision)
     li $v0, 0                  
@@ -1573,11 +1682,18 @@ game_loop_p2:
 	jal update_tetromino_state
 	# 3. Draw the screen
 	jal draw_grid
+	
+	move $a0, $s0
+	jal draw_outline               # outline placement
 	lw $a0, 0($s0)                 # current piece
 	lw $a1, 4($s0)                 # rotation
 	lw $a2, 8($s0)                 # x_offset
 	lw $a3, 12($s0)                # y_offset
+	subi $sp, $sp, 4
+	li $t0, 0
+	sw $t0, 0($sp)                 # is_outline is false
 	jal draw_tetromino
+	addi $sp, $sp, 4
 	# 4. Sleep
 	jal reset
 
