@@ -2,6 +2,10 @@
 
 This document provides a summary of the provided MIPS assembly code for Tetris, outlining its memory layout, key routines, data structures, and implemented features.
 
+### Video Demonstration
+
+A video demonstration can be found here: https://drive.google.com/file/d/1SL4aEQRvLuvtsU_kvv0Oy1O6IaN4D5KE/view?usp=sharing 
+
 #### Memory Layout
 
 * **Framebuffer:** The bitmap display is located at the base address `0x10008000`, accessed via the `$gp` register. The display has a width of 64 units and a height of 64 units, with each unit being 8 pixels, totaling a display size of 516x512 pixels.
