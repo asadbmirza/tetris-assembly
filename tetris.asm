@@ -1,5 +1,4 @@
 #####################################################################
-# CSCB58 Summer 2025 Assembly Final Project - UTSC
 # Asad Mirza, 1010009438, mirzaas4, asadb.mirza@mail.utoronto.ca
 # Bitmap Display Configuration:
 # - Unit width in pixels: 8 
@@ -8,12 +7,6 @@
 # - Display height in pixels: 512 
 # - Base Address for Display: 0x10008000 ($gp)
 #
-# Which milestones have been reached in this submission?
-# (See the assignment handout for descriptions of the milestones)
-# - Milestone 5 (choose the one the applies)
-#
-# Which approved features have been implemented?
-# (See the assignment handout for the list of features)
 # Easy Features:
 # 1. All tetrominoes are different colours
 # 2. Gravity
@@ -22,20 +15,14 @@
 # Hard Features:
 # 1. All tetrominoes implemented
 # 2. Animation when clearing
-
+#
 # How to play:
 # A/D Move left and right
 # W Rotates
 # S Move down
 # Space drops piece to bottom
-# Link to video demonstration for final submission:
+# Link to video demonstration:
 # - https://drive.google.com/file/d/1SL4aEQRvLuvtsU_kvv0Oy1O6IaN4D5KE/view?usp=sharing
-#
-# Are you OK with us sharing the video with people outside course staff?
-# - yes
-#
-# Any additional information that the TA needs to know:
-# - (write here, if any)
 #
 #####################################################################
 
