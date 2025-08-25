@@ -47,8 +47,6 @@ A video demonstration can be found here: https://drive.google.com/file/d/1SL4aEQ
 * **Game State**: The `current_tetromino_state` and related variables are structured as an array of four words to hold the piece type, rotation, x-offset, and y-offset, respectively.
 
 #### Implemented Features
-
-* **Milestone 5**: This project has reached Milestone 5.
 * **Easy Features**:
     1.  All tetrominoes have different colors.
     2.  Gravity is implemented, causing the pieces to fall over time.
