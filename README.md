@@ -2,6 +2,8 @@
 
 This document provides a summary of the provided MIPS assembly code for Tetris, outlining its memory layout, key routines, data structures, and implemented features.
 
+<img width="695" height="687" alt="image" src="https://github.com/user-attachments/assets/827c79d0-3d5a-4e4c-a16e-5f2efd65aa19" />
+
 ### Video Demonstration
 
 A video demonstration can be found here: https://drive.google.com/file/d/1SL4aEQRvLuvtsU_kvv0Oy1O6IaN4D5KE/view?usp=sharing 
