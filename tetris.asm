@@ -2,15 +2,15 @@
 # CSCB58 Summer 2025 Assembly Final Project - UTSC
 # Asad Mirza, 1010009438, mirzaas4, asadb.mirza@mail.utoronto.ca
 # Bitmap Display Configuration:
-# - Unit width in pixels: 8 (update this as needed) 
-# - Unit height in pixels: 8 (update this as needed)
-# - Display width in pixels: 516 (update this as needed)
-# - Display height in pixels: 512 (update this as needed)
+# - Unit width in pixels: 8 
+# - Unit height in pixels: 8 
+# - Display width in pixels: 512 
+# - Display height in pixels: 512 
 # - Base Address for Display: 0x10008000 ($gp)
 #
 # Which milestones have been reached in this submission?
 # (See the assignment handout for descriptions of the milestones)
-# - Milestone 1/2/3/4/5 (choose the one the applies)
+# - Milestone 5 (choose the one the applies)
 #
 # Which approved features have been implemented?
 # (See the assignment handout for the list of features)
@@ -29,7 +29,7 @@
 # S Move down
 # Space drops piece to bottom
 # Link to video demonstration for final submission:
-# - (insert YouTube / MyMedia / other URL here). Make sure we can view it!
+# - https://drive.google.com/file/d/1SL4aEQRvLuvtsU_kvv0Oy1O6IaN4D5KE/view?usp=sharing
 #
 # Are you OK with us sharing the video with people outside course staff?
 # - yes
@@ -230,8 +230,8 @@ j_pieces:
     .word 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0
 
 animation_colors:
-    .word 0xff6b35      # Primary: Bright orange
-    .word 0xff0000      # Secondary: Red
+    .word 0xffffff      # Primary: Bright orange
+    .word 0xffffff      # Secondary: Red
 
 ##############################################################################
 # Code
@@ -1359,9 +1359,8 @@ animate_row_done:
     # Call fill_grid to show the animation frame
     jal fill_grid
     
-    # Add a small delay to make animation visible
     li $v0, 32                  # System call for sleep
-    li $a0, 200                 # Sleep for 100ms to show animation
+    li $a0, 150                 # Sleep for 150ms to show animation
     syscall
     
     # Clear the row
